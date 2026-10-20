@@ -38,7 +38,6 @@ def cargar_y_validar() -> pd.DataFrame:
     ruta = encontrar_archivo_raw()
     print(f"[1/4] Leyendo dataset desde: {ruta.name}")
     df = pd.read_excel(ruta, sheet_name="Base de Datos")
-    
     # Estandarizar nombres de columnas eliminando tildes y caracteres extraños
     mapeo_columnas = {
         "País_reportante": "pais_reportante",
