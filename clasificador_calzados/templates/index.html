@@ -806,101 +806,209 @@
         <!-- ========================================================== -->
         <section class="tab-pane" id="tab-predicciones">
             <div class="pane-header">
-                <div>
-                    <div class="problem-tag">Problema 4 de 5</div>
-                    <h2 class="pane-title">Planificación de demanda</h2>
-                    <p class="problem-statement">
-                        Sin un pronóstico de ventas, Manaco no puede anticipar cuándo y cuánto reabastecer. Si el stock disponible no cubre la demanda estimada durante el plazo de reposición, se producen roturas de stock y se pierden ventas.
-                    </p>
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;width:100%;">
+                    <div>
+                        <div class="problem-tag">Problema 4 de 5</div>
+                        <h2 class="pane-title">Planificación de demanda</h2>
+                        <p class="problem-statement">
+                            Anticipa ventas y revisa qué productos necesitas reponer.
+                        </p>
+                    </div>
+                    <div style="text-align:right;">
+                        <span class="badge-tag tag-amber" id="badge-demanda-fuente">Pronóstico con ventas simuladas</span>
+                        <div class="data-source-note" id="texto-demanda-periodo" style="margin-top:4px;justify-content:flex-end;">
+                            Fuente: Ventas operativas registradas
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 4 KPIs -->
+            <!-- 4 KPIs Unificados -->
             <div class="kpi-grid" style="margin-top:16px;">
                 <div class="kpi-card card-highlight">
-                    <div class="kpi-header"><span class="kpi-label">VENTAS PREVISTAS (7 DÍAS)</span></div>
-                    <div class="kpi-body"><span class="kpi-value" id="kpi-plan-ventas-7d">136</span><span class="kpi-unit">pares</span></div>
-                    <div class="kpi-footer"><span class="kpi-caption">Proyección para todo el catálogo</span></div>
+                    <div class="kpi-header"><span class="kpi-label">VENTAS PREVISTAS</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-plan-ventas-7d">--</span><span class="kpi-unit">pares</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Suma de pronósticos del catálogo (7 días)</span></div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-header"><span class="kpi-label">ERROR DEL MODELO (MAE)</span></div>
-                    <div class="kpi-body"><span class="kpi-value" id="kpi-plan-mae">1.02</span><span class="kpi-unit">pares</span></div>
-                    <div class="kpi-footer"><span class="kpi-caption">Error medio evaluado fuera de muestra</span></div>
+                    <div class="kpi-header"><span class="kpi-label">PARES POR REPONER</span></div>
+                    <div class="kpi-body"><span class="kpi-value text-rose" id="kpi-plan-pares-reponer">--</span><span class="kpi-unit">pares</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Suma de faltantes individuales</span></div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-header"><span class="kpi-label">SUGERENCIA DE REPOSICIÓN</span></div>
-                    <div class="kpi-body"><span class="kpi-value" id="kpi-plan-reposicion-total">106</span><span class="kpi-unit">pares</span></div>
-                    <div class="kpi-footer"><span class="kpi-caption">Demanda en plazo + seguridad − stock</span></div>
+                    <div class="kpi-header"><span class="kpi-label">PRODUCTOS POR REPONER</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-plan-prods-reponer">--</span><span class="kpi-unit">SKUs</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Cantidad con faltante mayor que cero</span></div>
                 </div>
                 <div class="kpi-card">
-                    <div class="kpi-header"><span class="kpi-label">PLAZO DE ENTREGA</span></div>
-                    <div class="kpi-body"><span class="kpi-value" id="kpi-plan-lead-time">7</span><span class="kpi-unit">días</span></div>
-                    <div class="kpi-footer"><span class="kpi-caption">Plazo estándar de aprovisionamiento</span></div>
+                    <div class="kpi-header"><span class="kpi-label">PLAZO DE REPOSICIÓN</span></div>
+                    <div class="kpi-body"><span class="kpi-value-text" id="kpi-plan-lead-time">--</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Tiempo de entrega de aprovisionamiento</span></div>
                 </div>
             </div>
 
-            <!-- 2 Gráficos -->
+            <!-- Barra de Controles y Acciones -->
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-top:16px;background:rgba(255,255,255,0.02);padding:10px 14px;border:1px solid var(--border-glass);border-radius:var(--radius-md);">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <label for="select-prod-grafico-demanda" class="text-muted-sm" style="font-weight:600;">Producto en gráfico de pronóstico:</label>
+                    <select id="select-prod-grafico-demanda" class="input-select-sm" style="min-width:240px;">
+                        <option value="">Cargando productos...</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button class="btn btn-secondary btn-sm" id="btn-toggle-parametros-demanda">
+                        ⚙️ Ajustar parámetros
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="btn-abrir-solicitud-demanda">
+                        📝 Preparar reposición
+                    </button>
+                </div>
+            </div>
+
+            <!-- Subpanel colapsable: Ajustar parámetros -->
+            <div id="panel-ajuste-parametros-demanda" style="display:none;background:rgba(15,23,42,0.6);border:1px solid var(--border-glass);border-radius:var(--radius-md);padding:12px 16px;margin-top:10px;">
+                <div style="display:flex;align-items:center;flex-wrap:wrap;gap:16px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label for="input-demanda-lead-time" class="text-muted-sm">Plazo común (días):</label>
+                        <input type="number" id="input-demanda-lead-time" min="1" max="60" placeholder="7" class="input-text" style="width:70px;padding:4px 8px;font-size:12px;">
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <label for="input-demanda-stock-seguridad" class="text-muted-sm">Reserva común (pares):</label>
+                        <input type="number" id="input-demanda-stock-seguridad" min="0" max="200" placeholder="10" class="input-text" style="width:70px;padding:4px 8px;font-size:12px;">
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="btn-aplicar-parametros-demanda">Aplicar parámetros</button>
+                    <button class="btn btn-secondary btn-sm" id="btn-restablecer-parametros-demanda">Restablecer según producto</button>
+                    <span class="text-muted-sm" style="margin-left:auto;font-size:11px;">
+                        Ajusta el horizonte para recalcular demanda en plazo y reserva de seguridad.
+                    </span>
+                </div>
+            </div>
+
+            <!-- 2 Gráficos Útiles -->
             <div class="charts-grid-2" style="margin-top:16px;">
                 <div class="chart-box">
-                    <div class="chart-header"><h4 class="chart-title">Proyección anual de categorías (2024 vs 2025)</h4></div>
-                    <div class="chart-container" style="height:250px;"><canvas id="chart-plan-excel"></canvas></div>
+                    <div class="chart-header">
+                        <div>
+                            <h4 class="chart-title">Ventas anteriores y próximas ventas estimadas</h4>
+                            <span class="chart-legend-text">Histórico reciente (línea continua) y pronóstico de siete días (línea discontinua)</span>
+                        </div>
+                    </div>
+                    <div class="chart-container" style="height:270px;position:relative;">
+                        <canvas id="chart-plan-historico-pronostico"></canvas>
+                    </div>
                     <div class="data-source-note" style="padding:6px 14px 10px;">
-                        <span class="source-tag">Fuente Excel</span> Tendencia calculada desde BDatos_MANACO.xlsx por categoría SA6.
+                        <span class="source-tag">Línea sólida</span> Ventas operativas reales por día.
+                        <span class="source-tag" style="margin-left:6px;">Línea discontinua</span> Proyección a 7 días vista con fechas reales.
                     </div>
                 </div>
+
                 <div class="chart-box">
-                    <div class="chart-header"><h4 class="chart-title">Pronóstico de ventas a 7 días por modelo</h4></div>
-                    <div class="chart-container" style="height:250px;"><canvas id="chart-plan-7d"></canvas></div>
+                    <div class="chart-header">
+                        <div>
+                            <h4 class="chart-title">Disponibilidad y necesidad por producto</h4>
+                            <span class="chart-legend-text">Barras agrupadas de stock disponible vs necesidad (plazo + reserva)</span>
+                        </div>
+                    </div>
+                    <div class="chart-container" style="height:270px;position:relative;">
+                        <canvas id="chart-plan-disponibilidad-necesidad"></canvas>
+                    </div>
                     <div class="data-source-note" style="padding:6px 14px 10px;">
-                        <span class="source-tag">Simulación</span> Modelo de series de tiempo sobre historial sintético de 12 meses.
+                        <span class="source-tag">Disponible</span> Stock actual en bodega.
+                        <span class="source-tag" style="margin-left:6px;">Necesidad</span> Demanda estimada en plazo + reserva de seguridad.
                     </div>
                 </div>
             </div>
 
-            <!-- Solución -->
+            <!-- Solución Propuesta -->
             <div class="solution-block">
                 <div class="solution-block-title">Solución propuesta</div>
-                <p>Calcular el punto de reorden como la demanda esperada durante el plazo de reposición más el stock de seguridad, y disparar alertas cuando el stock actual cae por debajo de ese umbral. La sugerencia de reposición se basa en el historial de ventas sintético de 12 meses; con ventas reales suficientes, los pronósticos mejorarán.</p>
-                <div class="data-source-note">
-                    <span class="source-tag">Simulación</span> Historial transaccional de 12 meses (datos sintéticos).
-                    <span class="source-tag">Fuente Excel</span> Tendencias comerciales por categoría 2020–2024.
+                <p>Compara las ventas estimadas con el inventario disponible.</p>
+                <div class="data-source-note" style="margin-top:8px;">
+                    <span class="source-tag">Cálculo</span> Faltante de cobertura = máx(0, Umbral − Posición de inventario).
+                    <span class="source-tag" style="margin-left:6px;">Control preventivo</span> El faltante es una sugerencia de cobertura, no una orden de compra obligatoria ni aumento automático de stock.
                 </div>
             </div>
 
-            <!-- Tabla de reposición -->
+            <!-- Tabla Simplificada de Reposición -->
             <div class="card-box" style="margin-top:16px;">
-                <div class="card-box-header"><h3 class="card-box-title">Disponibilidad frente a necesidad prevista en el plazo de reposición</h3></div>
+                <div class="card-box-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                    <div>
+                        <h3 class="card-box-title">Sugerencias de reposición por producto</h3>
+                        <p class="chart-legend-text">Comparación directa de disponibilidad, necesidad y faltante de cobertura</p>
+                    </div>
+                    <button class="btn btn-tab-sm" id="btn-reintentar-demanda" style="display:none;">🔄 Reintentar</button>
+                </div>
                 <div class="table-responsive">
                     <table class="data-table">
                         <thead>
                             <tr>
                                 <th>Producto</th>
-                                <th>Stock actual</th>
-                                <th>Plazo (días)</th>
-                                <th>Stock seguridad</th>
-                                <th>Demanda estimada</th>
-                                <th>Umbral de pedido</th>
-                                <th>Sugerencia reposición</th>
+                                <th>Disponible</th>
+                                <th>Necesidad</th>
+                                <th>Pendiente de recibir</th>
+                                <th>Pares por reponer</th>
                                 <th>Estado</th>
-                                <th>Acción</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-plan-reposicion">
-                            <tr><td colspan="9" class="text-center">Cargando sugerencias...</td></tr>
+                            <tr><td colspan="6" class="text-center">Cargando sugerencias de reposición...</td></tr>
                         </tbody>
                     </table>
                 </div>
+                <div style="padding:10px 14px;background:rgba(255,255,255,0.02);border-top:1px solid var(--border-glass);font-size:11px;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                    <div>
+                        💡 <strong>Aclaración:</strong> Si no existen pedidos pendientes registrados (0 pares), el cálculo asume que solo se cuenta con el stock disponible. El faltante de cobertura es una sugerencia preventiva, no realiza compras ni aumenta el inventario automáticamente.
+                    </div>
+                    <button class="btn btn-tab-sm" id="btn-reset-pendientes-demanda" title="Restablecer pedidos pendientes a 0">
+                        Limpiar pedidos pendientes
+                    </button>
+                </div>
             </div>
 
-            <details class="collapsible-panel" style="margin-top:14px;">
+            <!-- Metodología y MAE (Cerrada por defecto) -->
+            <details class="collapsible-panel" id="panel-metodologia-demanda" style="margin-top:14px;">
                 <summary class="collapsible-header">
-                    <span class="collapsible-title">ℹ️ Metodología de pronóstico y reposición</span>
-                    <span class="collapsible-hint">Supuestos del modelo y limitaciones con datos sintéticos</span>
+                    <span class="collapsible-title">ℹ️ Cómo se calcula la demanda, reposición y evaluación del modelo (MAE)</span>
+                    <span class="collapsible-hint">Fórmulas, partición temporal y métricas de error fuera de muestra</span>
                 </summary>
                 <div class="collapsible-content text-muted-sm">
-                    <p><strong>Punto de reorden:</strong> Demanda_lead_time = Ventas_diarias_promedio × Plazo_días. Umbral = Demanda_lead_time + Stock_seguridad.</p>
-                    <p style="margin-top:6px;"><strong>Sugerencia de reposición:</strong> Máx(0, Umbral − Stock_actual + margen de seguridad adicional).</p>
-                    <p style="margin-top:6px;"><strong>Limitación:</strong> El historial actual proviene de simulaciones de 12 meses. Con ventas reales suficientes, los pronósticos y sugerencias mejorarán en precisión.</p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+                        <div>
+                            <h4 style="font-size:12px;color:var(--text-primary);text-transform:uppercase;margin-bottom:6px;">Fórmulas de reposición</h4>
+                            <ul style="padding-left:16px;line-height:1.6;">
+                                <li><strong>Demanda en plazo:</strong> Suma de las ventas pronosticadas durante el plazo de entrega del proveedor (o promedio diario × días de plazo).</li>
+                                <li><strong>Umbral de reposición (Necesidad):</strong> Demanda en plazo + Reserva de seguridad.</li>
+                                <li><strong>Posición de inventario:</strong> Stock disponible actual + Entradas pendientes confirmadas.</li>
+                                <li><strong>Faltante de cobertura:</strong> Máx(0, Umbral − Posición de inventario). No se agrega una segunda reserva de seguridad.</li>
+                            </ul>
+                        </div>
+                        <div>
+                            <h4 style="font-size:12px;color:var(--text-primary);text-transform:uppercase;margin-bottom:6px;">Evaluación del modelo de pronóstico (MAE)</h4>
+                            <ul style="padding-left:16px;line-height:1.6;">
+                                <li><strong>Métrica:</strong> Error Absoluto Medio (MAE). Unidad: <code>pares/día</code>.</li>
+                                <li><strong>Nivel de agregación:</strong> Evaluado por SKU individual sobre el catálogo.</li>
+                                <li><strong>Período evaluado:</strong> Partición cronológica estricta (80% entrenamiento, 20% prueba fuera de muestra). No se utilizaron datos futuros para entrenar.</li>
+                                <li><strong>Comparación de modelos:</strong> Promedio Móvil 7D (MAE promedio: <span id="mae-valor-ma7" style="color:var(--emerald-accent);font-weight:600;">--</span> pares/día) vs Pronóstico Ingenuo Lag-1 (MAE promedio: <span id="mae-valor-naive" style="color:var(--text-primary);font-weight:600;">--</span> pares/día).</li>
+                                <li><strong>Advertencia metodológica:</strong> Sumar datos reales permite capturar la operación cotidiana pero no garantiza mejorar la precisión si la variabilidad del mercado se incrementa.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </details>
+
+            <!-- Contexto Externo: Comercio Exterior (Cerrado por defecto) -->
+            <details class="collapsible-panel" id="panel-plan-excel-collapse" style="margin-top:14px;">
+                <summary class="collapsible-header">
+                    <span class="collapsible-title">🌐 Contexto externo: Proyección anual de comercio exterior (BDatos_MANACO.xlsx)</span>
+                    <span class="collapsible-hint">Importaciones reportadas por aduanas de España (no representa la demanda de MANACO)</span>
+                </summary>
+                <div class="collapsible-content">
+                    <div class="chart-container" style="height:240px;position:relative;">
+                        <canvas id="chart-plan-excel"></canvas>
+                    </div>
+                    <div class="data-source-note" style="margin-top:8px;">
+                        <span class="source-tag">Aviso</span> Proyección anual exploratoria de series aduaneras 2020-2024. No debe interpretarse como consumo local de calzados en Bolivia.
+                    </div>
                 </div>
             </details>
         </section>
@@ -1054,20 +1162,52 @@
 </div>
 
 <!-- ============================================================== -->
-<!-- MODAL: CONFIRMACIÓN DE REPOSICIÓN                              -->
+<!-- MODAL: PREPARAR SOLICITUD DE REPOSICIÓN                        -->
 <!-- ============================================================== -->
 <div class="modal-overlay" id="modal-reposicion-overlay" style="display:none;">
-    <div class="modal-card">
+    <div class="modal-card" style="max-width:480px;">
         <div class="modal-header">
-            <h3 class="modal-title">Confirmar ingreso de reposición</h3>
+            <h3 class="modal-title">Preparar solicitud de reposición</h3>
             <button class="modal-close-btn" id="btn-cancelar-reposicion">&times;</button>
         </div>
         <div class="modal-body">
-            <p id="modal-reposicion-mensaje">¿Desea ingresar el pedido de reposición?</p>
+            <p class="text-muted-sm" style="margin-bottom:12px;">
+                Registra un pedido programado a fábrica o proveedor. La cantidad solicitada se sumará a <strong>"Pendiente de recibir"</strong> y reducirá el faltante de cobertura. El stock en bodega <strong>no se modificará</strong> hasta su recepción física.
+            </p>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                <div>
+                    <label for="modal-rep-select-producto" class="text-muted-sm" style="font-weight:600;display:block;margin-bottom:4px;">Producto:</label>
+                    <select id="modal-rep-select-producto" class="input-select" style="width:100%;">
+                        <option value="">Seleccione un producto...</option>
+                    </select>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;background:rgba(255,255,255,0.03);padding:10px;border-radius:var(--radius-sm);border:1px solid var(--border-glass);">
+                    <div>
+                        <span class="text-muted-sm" style="font-size:10px;display:block;">Disponible:</span>
+                        <strong id="modal-rep-disp">--</strong> <span class="text-muted-sm">pares</span>
+                    </div>
+                    <div>
+                        <span class="text-muted-sm" style="font-size:10px;display:block;">Necesidad:</span>
+                        <strong id="modal-rep-nec">--</strong> <span class="text-muted-sm">pares</span>
+                    </div>
+                    <div>
+                        <span class="text-muted-sm" style="font-size:10px;display:block;">Pendiente:</span>
+                        <strong id="modal-rep-pend">--</strong> <span class="text-muted-sm">pares</span>
+                    </div>
+                </div>
+                <div>
+                    <label for="modal-rep-input-cantidad" class="text-muted-sm" style="font-weight:600;display:block;margin-bottom:4px;">Pares a solicitar (cobertura preventiva):</label>
+                    <input type="number" id="modal-rep-input-cantidad" min="1" max="1000" class="input-text" style="width:100%;font-size:14px;font-weight:600;" placeholder="Cantidad sugerida">
+                </div>
+                <div>
+                    <label for="modal-rep-input-responsable" class="text-muted-sm" style="font-weight:600;display:block;margin-bottom:4px;">Responsable / Solicitante:</label>
+                    <input type="text" id="modal-rep-input-responsable" value="Planificador de Abastecimiento" class="input-text" style="width:100%;">
+                </div>
+            </div>
         </div>
-        <div class="modal-footer">
-            <button class="btn btn-secondary" id="btn-cancelar-modal-rep">Cancelar</button>
-            <button class="btn btn-success" id="btn-confirmar-reposicion-action">Confirmar ingreso</button>
+        <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center;">
+            <button class="btn btn-secondary btn-sm" id="btn-cancelar-modal-rep">Cancelar</button>
+            <button class="btn btn-primary" id="btn-confirmar-reposicion-action">Guardar solicitud</button>
         </div>
     </div>
 </div>

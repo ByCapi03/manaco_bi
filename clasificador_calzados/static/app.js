@@ -33,6 +33,12 @@ const AppState = {
         flujo: "TODOS",
         medida: "USD",
         datos: null
+    },
+    demanda: {
+        datos: null,
+        productoSeleccionadoId: null,
+        leadTimeFiltro: null,
+        stockSeguridadFiltro: null
     }
 };
 
@@ -47,6 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
     configurarCamaraInventario();
     configurarCalculadoraCostos();
     configurarTabProductos();
+    configurarTabDemanda();
 
     // Cargar datos iniciales
     cargarOpcionesFiltrosResumen();
@@ -95,6 +102,19 @@ function configurarTabs() {
                         if (AppState.charts.prodCostoPrecio) AppState.charts.prodCostoPrecio.resize();
                         if (AppState.charts.prodRanking) AppState.charts.prodRanking.resize();
                         if (AppState.charts.extPart) AppState.charts.extPart.resize();
+                    }, 120);
+                }
+            }
+
+            // Si se activa la pestaña Planificación de demanda, refrescar o redimensionar
+            if (targetId === "tab-predicciones") {
+                if (!AppState.demanda || !AppState.demanda.datos) {
+                    cargarPrediccionesOperativas();
+                } else {
+                    setTimeout(() => {
+                        if (AppState.charts.planHistoricoPronostico) AppState.charts.planHistoricoPronostico.resize();
+                        if (AppState.charts.planDisponibilidadNecesidad) AppState.charts.planDisponibilidadNecesidad.resize();
+                        if (AppState.charts.planExcel) AppState.charts.planExcel.resize();
                     }, 120);
                 }
             }
@@ -1900,29 +1920,242 @@ async function cargarContextoExternoProductos() {
 }
 
 // ==========================================================================
-// 5. PREDICCIONES
+// 5. PLANIFICACIÓN DE DEMANDA (PROBLEMA 4)
 // ==========================================================================
-async function cargarPrediccionesOperativas() {
+
+function configurarTabDemanda() {
+    // Selector de producto para Gráfico A
+    const selProd = document.getElementById("select-prod-grafico-demanda");
+    if (selProd) {
+        selProd.addEventListener("change", (e) => {
+            const id = parseInt(e.target.value);
+            if (id > 0 && AppState.demanda) {
+                AppState.demanda.productoSeleccionadoId = id;
+                if (AppState.demanda.datos && AppState.demanda.datos.productos) {
+                    renderizarGraficoHistoricoPronostico(AppState.demanda.datos.productos);
+                }
+            }
+        });
+    }
+
+    // Toggle de Ajustar Parámetros
+    const btnToggleParam = document.getElementById("btn-toggle-parametros-demanda");
+    const panelParam = document.getElementById("panel-ajuste-parametros-demanda");
+    if (btnToggleParam && panelParam) {
+        btnToggleParam.addEventListener("click", () => {
+            const visible = panelParam.style.display !== "none";
+            panelParam.style.display = visible ? "none" : "block";
+        });
+    }
+
+    // Botón Aplicar Parámetros
+    const btnAplicarParam = document.getElementById("btn-aplicar-parametros-demanda");
+    if (btnAplicarParam) {
+        btnAplicarParam.addEventListener("click", () => {
+            const inputLt = document.getElementById("input-demanda-lead-time");
+            const inputSs = document.getElementById("input-demanda-stock-seguridad");
+            const lt = inputLt && inputLt.value ? parseInt(inputLt.value) : null;
+            const ss = inputSs && inputSs.value !== "" ? parseInt(inputSs.value) : null;
+
+            if (lt !== null && lt <= 0) {
+                alert("El plazo de reposición debe ser un entero mayor o igual a 1 día.");
+                return;
+            }
+            if (ss !== null && ss < 0) {
+                alert("La reserva de seguridad no puede ser un número negativo.");
+                return;
+            }
+
+            AppState.demanda.leadTimeFiltro = lt;
+            AppState.demanda.stockSeguridadFiltro = ss;
+            cargarPrediccionesOperativas(true);
+        });
+    }
+
+    // Botón Restablecer Parámetros
+    const btnRestablecerParam = document.getElementById("btn-restablecer-parametros-demanda");
+    if (btnRestablecerParam) {
+        btnRestablecerParam.addEventListener("click", () => {
+            const inputLt = document.getElementById("input-demanda-lead-time");
+            const inputSs = document.getElementById("input-demanda-stock-seguridad");
+            if (inputLt) inputLt.value = "";
+            if (inputSs) inputSs.value = "";
+            AppState.demanda.leadTimeFiltro = null;
+            AppState.demanda.stockSeguridadFiltro = null;
+            cargarPrediccionesOperativas(true);
+        });
+    }
+
+    // Botón Reintentar carga
+    const btnReintentar = document.getElementById("btn-reintentar-demanda");
+    if (btnReintentar) {
+        btnReintentar.addEventListener("click", () => cargarPrediccionesOperativas(true));
+    }
+
+    // Botón Limpiar Pendientes
+    const btnResetPend = document.getElementById("btn-reset-pendientes-demanda");
+    if (btnResetPend) {
+        btnResetPend.addEventListener("click", async () => {
+            if (!confirm("¿Desea restablecer a cero todos los pedidos pendientes registrados?")) return;
+            try {
+                const res = await fetch("/api/predicciones/restablecer-pendientes", { method: "POST" });
+                const j = await res.json();
+                if (j.exito) {
+                    cargarPrediccionesOperativas(true);
+                }
+            } catch (e) {
+                console.error("Error al restablecer pendientes:", e);
+            }
+        });
+    }
+
+    // Botón Abrir Modal de Solicitud de Reposición
+    const btnAbrirSol = document.getElementById("btn-abrir-solicitud-demanda");
+    if (btnAbrirSol) {
+        btnAbrirSol.addEventListener("click", () => abrirModalSolicitudReposicion());
+    }
+
+    // Selector de producto dentro del modal
+    const modalSelProd = document.getElementById("modal-rep-select-producto");
+    if (modalSelProd) {
+        modalSelProd.addEventListener("change", (e) => {
+            actualizarCamposModalReposicion(parseInt(e.target.value));
+        });
+    }
+
+    // Cargar gráfico de comercio exterior cuando se expanda el panel
+    const panelExcelCollapse = document.getElementById("panel-plan-excel-collapse");
+    if (panelExcelCollapse) {
+        panelExcelCollapse.addEventListener("toggle", () => {
+            if (panelExcelCollapse.open) {
+                cargarPrediccionesExcel();
+            }
+        });
+    }
+}
+
+async function cargarPrediccionesOperativas(forzar = false) {
+    const btnReintentar = document.getElementById("btn-reintentar-demanda");
+    if (btnReintentar) btnReintentar.style.display = "none";
+
+    const tbody = document.getElementById("tbody-plan-reposicion");
+    if (tbody && !AppState.demanda.datos) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">Cargando sugerencias de reposición...</td></tr>`;
+    }
+
     try {
-        const res = await fetch("/api/predicciones/operativas");
+        let url = "/api/predicciones/operativas";
+        const params = new URLSearchParams();
+        if (AppState.demanda && AppState.demanda.leadTimeFiltro) {
+            params.append("lead_time", AppState.demanda.leadTimeFiltro);
+        }
+        if (AppState.demanda && AppState.demanda.stockSeguridadFiltro !== null && AppState.demanda.stockSeguridadFiltro !== undefined) {
+            params.append("stock_seguridad", AppState.demanda.stockSeguridadFiltro);
+        }
+        const qs = params.toString();
+        if (qs) url += "?" + qs;
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         const json = await res.json();
-        if (!json.exito) return;
 
-        const kpis = json.datos.kpis || {};
-        const prods = json.datos.productos || [];
+        if (!json.exito) {
+            throw new Error(json.mensaje || json.error || "No se pudo obtener el pronóstico de demanda.");
+        }
 
+        AppState.demanda.datos = json;
+
+        // Metadatos unificados
+        const kpis = json.totales_resumen || (json.datos && json.datos.kpis) || {};
+        const prods = json.productos || (json.datos && json.datos.productos) || [];
+        const fuente = json.fuente_datos || (json.datos && json.datos.fuente_datos) || {};
+
+        // 1. Tarjetas de Indicadores (Mismo resultado unificado)
         const el7d = document.getElementById("kpi-plan-ventas-7d");
-        const elMae = document.getElementById("kpi-plan-mae");
-        const elRep = document.getElementById("kpi-plan-reposicion-total");
+        const elRepPares = document.getElementById("kpi-plan-pares-reponer");
+        const elRepProds = document.getElementById("kpi-plan-prods-reponer");
+        const elLeadTime = document.getElementById("kpi-plan-lead-time");
 
-        if (el7d) el7d.textContent = (kpis.total_ventas_previstas_7d || 136).toLocaleString();
-        if (elMae) elMae.textContent = (kpis.mae_promedio_general || 1.02).toFixed(2);
-        if (elRep) elRep.textContent = (kpis.sugerencia_reposicion_total || 106).toLocaleString();
+        if (el7d) el7d.textContent = (kpis.total_ventas_previstas_7d !== undefined ? kpis.total_ventas_previstas_7d : 0).toLocaleString();
+        if (elRepPares) elRepPares.textContent = (kpis.pares_por_reponer !== undefined ? kpis.pares_por_reponer : 0).toLocaleString();
+        if (elRepProds) elRepProds.textContent = `${kpis.productos_por_reponer !== undefined ? kpis.productos_por_reponer : 0}`;
+        if (elLeadTime) elLeadTime.textContent = kpis.plazo_comun || "Según producto";
 
-        poblarTablaReposicion(prods);
-        renderizarGraficoPronostico7D(prods);
+        // 2. Metadatos de procedencia y badge
+        const badge = document.getElementById("badge-demanda-fuente");
+        if (badge) {
+            badge.textContent = fuente.badge_texto || (fuente.es_simulado ? "Pronóstico con ventas simuladas" : "Pronóstico con ventas registradas");
+            badge.style.display = "inline-flex";
+        }
+        const lblPeriodo = document.getElementById("texto-demanda-periodo");
+        if (lblPeriodo) {
+            lblPeriodo.textContent = fuente.etiqueta_fuente ? `Fuente: ${fuente.etiqueta_fuente}` : "Fuente: Ventas operativas registradas";
+        }
+
+        // 3. MAE en desplegable de metodología
+        const elMaeMa7 = document.getElementById("mae-valor-ma7");
+        const elMaeNaive = document.getElementById("mae-valor-naive");
+        if (elMaeMa7) elMaeMa7.textContent = kpis.mae_promedio_general !== undefined ? kpis.mae_promedio_general.toFixed(2) : "--";
+        if (elMaeNaive) elMaeNaive.textContent = kpis.mae_naive_general !== undefined ? kpis.mae_naive_general.toFixed(2) : "--";
+
+        // 4. Selector de productos para Gráfico A
+        poblarSelectorProductoDemanda(prods);
+
+        // 5. Manejo independiente de componentes: un fallo no bloquea a los demás
+        // A. Tabla simplificada
+        try {
+            poblarTablaReposicion(prods);
+        } catch (errTab) {
+            console.error("Error al poblar tabla de reposición:", errTab);
+            if (tbody) tbody.innerHTML = `<tr><td colspan="6" class="text-center text-rose">Error al renderizar tabla: ${errTab.message}</td></tr>`;
+        }
+
+        // B. Gráfico A: Histórico reciente y pronóstico 7D
+        try {
+            renderizarGraficoHistoricoPronostico(prods);
+        } catch (errChartA) {
+            console.error("Error al renderizar Gráfico A (Pronóstico):", errChartA);
+        }
+
+        // C. Gráfico B: Disponibilidad y necesidad agrupadas
+        try {
+            renderizarGraficoDisponibilidadNecesidad(prods);
+        } catch (errChartB) {
+            console.error("Error al renderizar Gráfico B (Disponibilidad y necesidad):", errChartB);
+        }
+
     } catch (e) {
-        console.warn("Error cargando predicciones operativas:", e);
+        console.error("Error general en cargarPrediccionesOperativas:", e);
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="text-center" style="padding:20px;color:var(--manaco-crimson);">
+                        <p style="margin-bottom:8px;">⚠️ Error al cargar datos de planificación: ${e.message}</p>
+                        <button class="btn btn-secondary btn-sm" onclick="cargarPrediccionesOperativas(true)">🔄 Reintentar</button>
+                    </td>
+                </tr>
+            `;
+        }
+        if (btnReintentar) btnReintentar.style.display = "inline-flex";
+    }
+}
+
+function poblarSelectorProductoDemanda(prods) {
+    const sel = document.getElementById("select-prod-grafico-demanda");
+    if (!sel || !prods || prods.length === 0) return;
+
+    const valorPrevio = AppState.demanda.productoSeleccionadoId;
+    sel.innerHTML = prods.map(p => {
+        const sufijo = p.faltante_cobertura > 0 ? ` (Faltante: ${p.faltante_cobertura} p.)` : " (Cubierto)";
+        return `<option value="${p.id_producto}">[${p.sku}] ${p.nombre_producto}${sufijo}</option>`;
+    }).join("");
+
+    if (valorPrevio && prods.some(p => p.id_producto === valorPrevio)) {
+        sel.value = valorPrevio;
+    } else {
+        const conFaltante = prods.find(p => p.faltante_cobertura > 0);
+        AppState.demanda.productoSeleccionadoId = conFaltante ? conFaltante.id_producto : prods[0].id_producto;
+        sel.value = AppState.demanda.productoSeleccionadoId;
     }
 }
 
@@ -1930,59 +2163,352 @@ function poblarTablaReposicion(prods) {
     const tbody = document.getElementById("tbody-plan-reposicion");
     if (!tbody) return;
 
-    if (prods.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">Cargando sugerencias de reposición...</td></tr>`;
+    if (!prods || prods.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted">No se encontraron productos en el inventario.</td></tr>`;
         return;
     }
 
     tbody.innerHTML = prods.map(p => {
-        const estado = p.alerta_stock ? `<span class="badge-tag tag-alert">Bajo Mínimo</span>` : `<span class="badge-tag tag-emerald">Normal</span>`;
+        let badgeEstado;
+        if (p.estado === "Historial insuficiente") {
+            badgeEstado = `<span class="badge-tag tag-amber" title="${p.mensaje_estado || 'Datos insuficientes'}">Historial insuficiente</span>`;
+        } else if (p.faltante_cobertura > 0) {
+            badgeEstado = `<span class="badge-tag tag-alert">Bajo cobertura</span>`;
+        } else {
+            badgeEstado = `<span class="badge-tag tag-emerald">Cubierto</span>`;
+        }
+
+        const pendientesHtml = p.pendientes_recibir > 0
+            ? `<span class="badge-tag tag-emerald">+${p.pendientes_recibir} pares</span>`
+            : `<span class="text-muted-sm">0 pares</span>`;
+
+        const faltanteHtml = p.faltante_cobertura > 0
+            ? `<strong style="color:var(--manaco-crimson);font-size:13px;">${p.faltante_cobertura}</strong> <span class="text-muted-sm">pares</span>`
+            : `<strong class="text-emerald">0</strong> <span class="text-muted-sm">pares</span>`;
+
+        const necesidadDetalle = `${p.necesidad} pares`;
+        const necesidadTooltip = `Demanda en plazo: ${p.demanda_plazo} + Reserva: ${p.reserva_seguridad} (Plazo: ${p.lead_time_dias}d)`;
+
         return `
             <tr>
-                <td><strong>${p.nombre_producto}</strong> (<code>${p.sku}</code>)</td>
-                <td>${p.stock_actual} pares</td>
-                <td>${p.lead_time_dias} días</td>
-                <td>${p.stock_seguridad} pares</td>
-                <td>${p.demanda_lead_time_estimada} pares</td>
-                <td><strong>${p.punto_reorden} pares</strong></td>
-                <td><strong class="text-emerald">${p.sugerencia_reposicion_pares} pares</strong></td>
-                <td>${estado}</td>
                 <td>
-                    <button class="btn btn-primary btn-sm" onclick="abrirModalReposicion(${p.id_producto}, '${p.nombre_producto}', ${p.sugerencia_reposicion_pares})">
-                        Ingresar Reposición
-                    </button>
+                    <strong>${p.nombre_producto}</strong>
+                    <div style="font-size:11px;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">${p.sku} &bull; ${p.categoria}</div>
                 </td>
+                <td><strong style="color:var(--text-primary);">${p.disponible}</strong> <span class="text-muted-sm">pares</span></td>
+                <td><span title="${necesidadTooltip}">${necesidadDetalle}</span></td>
+                <td>${pendientesHtml}</td>
+                <td>${faltanteHtml}</td>
+                <td>${badgeEstado}</td>
             </tr>
         `;
     }).join("");
 }
 
-function renderizarGraficoPronostico7D(prods) {
-    const ctx7d = document.getElementById("chart-plan-7d");
-    if (ctx7d && prods.length > 0) {
-        if (AppState.charts.plan7d) AppState.charts.plan7d.destroy();
+function renderizarGraficoHistoricoPronostico(prods) {
+    const ctx = document.getElementById("chart-plan-historico-pronostico");
+    if (!ctx || !prods || prods.length === 0) return;
 
-        AppState.charts.plan7d = new Chart(ctx7d, {
-            type: "bar",
-            data: {
-                labels: prods.map(p => p.sku),
-                datasets: [{
-                    label: "Demanda Prevista 7 Días (pares)",
-                    data: prods.map(p => p.ventas_previstas_7d),
-                    backgroundColor: "#0ea5e9",
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: { beginAtZero: true, grid: { color: "rgba(255,255,255,0.06)" } },
-                    x: { grid: { color: "rgba(255,255,255,0.06)" } }
+    const selId = AppState.demanda.productoSeleccionadoId;
+    const prod = prods.find(p => p.id_producto == selId) || prods[0];
+
+    const hist = prod.historico_reciente || { fechas: [], valores: [] };
+    const pron = prod.pronostico_7d || { fechas: [], valores_diarios_pares: [] };
+
+    if (hist.fechas.length === 0 && pron.fechas.length === 0) {
+        if (AppState.charts.planHistoricoPronostico) AppState.charts.planHistoricoPronostico.destroy();
+        return;
+    }
+
+    const labels = [...hist.fechas, ...pron.fechas];
+    const nHist = hist.valores.length;
+
+    // Serie histórica (línea sólida)
+    const datosHist = [...hist.valores, ...Array(pron.fechas.length).fill(null)];
+
+    // Serie pronóstico (línea discontinua conectada desde el último punto histórico)
+    const ultimoHistVal = nHist > 0 ? hist.valores[nHist - 1] : (pron.valores_diarios_pares[0] || 0);
+    const nullsForecast = Array(Math.max(0, nHist - 1)).fill(null);
+    const datosPron = [...nullsForecast, ultimoHistVal, ...pron.valores_diarios_pares];
+
+    if (AppState.charts.planHistoricoPronostico) {
+        AppState.charts.planHistoricoPronostico.destroy();
+    }
+
+    AppState.charts.planHistoricoPronostico = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: `Historial reciente (${prod.sku})`,
+                    data: datosHist,
+                    borderColor: "#0ea5e9",
+                    backgroundColor: "rgba(14, 165, 233, 0.12)",
+                    borderWidth: 2.2,
+                    tension: 0.2,
+                    fill: false,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                    spanGaps: false
                 },
-                plugins: { legend: { display: false } }
+                {
+                    label: "Pronóstico a 7 días (estimado)",
+                    data: datosPron,
+                    borderColor: "#10b981",
+                    backgroundColor: "rgba(16, 185, 129, 0.08)",
+                    borderWidth: 2.2,
+                    borderDash: [5, 5],
+                    tension: 0.2,
+                    fill: false,
+                    pointRadius: 4,
+                    pointBackgroundColor: "#10b981",
+                    pointHoverRadius: 6,
+                    spanGaps: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: "index",
+                intersect: false
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: "rgba(255,255,255,0.06)" },
+                    ticks: {
+                        color: "#94a3b8",
+                        callback: v => `${v} p.`
+                    },
+                    title: {
+                        display: true,
+                        text: "Pares / día",
+                        color: "#64748b",
+                        font: { size: 10 }
+                    }
+                },
+                x: {
+                    grid: { color: "rgba(255,255,255,0.04)" },
+                    ticks: {
+                        color: "#94a3b8",
+                        maxRotation: 45,
+                        autoSkip: true,
+                        maxTicksLimit: 14
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: "top",
+                    labels: {
+                        boxWidth: 14,
+                        color: "#cbd5e1",
+                        font: { size: 11 }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: ctxChart => {
+                            if (ctxChart.raw === null || ctxChart.raw === undefined) return null;
+                            return `${ctxChart.dataset.label}: ${ctxChart.raw} pares`;
+                        }
+                    }
+                }
             }
+        }
+    });
+}
+
+function renderizarGraficoDisponibilidadNecesidad(prods) {
+    const ctx = document.getElementById("chart-plan-disponibilidad-necesidad");
+    if (!ctx || !prods || prods.length === 0) return;
+
+    if (AppState.charts.planDisponibilidadNecesidad) {
+        AppState.charts.planDisponibilidadNecesidad.destroy();
+    }
+
+    const labels = prods.map(p => p.sku);
+    const disponibles = prods.map(p => p.disponible);
+    const necesidades = prods.map(p => p.necesidad);
+
+    AppState.charts.planDisponibilidadNecesidad = new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: "Stock disponible",
+                    data: disponibles,
+                    backgroundColor: "#0ea5e9",
+                    borderRadius: 4,
+                    barPercentage: 0.8,
+                    categoryPercentage: 0.7
+                },
+                {
+                    label: "Necesidad (Plazo + Reserva)",
+                    data: necesidades,
+                    backgroundColor: "#f43f5e",
+                    borderRadius: 4,
+                    barPercentage: 0.8,
+                    categoryPercentage: 0.7
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: "index",
+                intersect: false
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: "rgba(255,255,255,0.06)" },
+                    ticks: {
+                        color: "#94a3b8",
+                        callback: v => `${v} p.`
+                    },
+                    title: {
+                        display: true,
+                        text: "Cantidad de pares",
+                        color: "#64748b",
+                        font: { size: 10 }
+                    }
+                },
+                x: {
+                    grid: { color: "rgba(255,255,255,0.04)" },
+                    ticks: { color: "#94a3b8" }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: "top",
+                    labels: {
+                        boxWidth: 14,
+                        color: "#cbd5e1",
+                        font: { size: 11 }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        afterBody: (items) => {
+                            const idx = items[0].dataIndex;
+                            const p = prods[idx];
+                            const pend = p.pendientes_recibir || 0;
+                            const falt = p.faltante_cobertura || 0;
+                            return `\nPendiente de recibir: ${pend} pares\nFaltante de cobertura: ${falt} pares`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function abrirModalSolicitudReposicion(idProdDefault = null) {
+    const modal = document.getElementById("modal-reposicion-overlay");
+    const selProd = document.getElementById("modal-rep-select-producto");
+    if (!modal || !selProd) return;
+
+    const prods = (AppState.demanda && AppState.demanda.datos && AppState.demanda.datos.productos) || [];
+    if (prods.length === 0) {
+        alert("No hay productos disponibles para preparar reposición.");
+        return;
+    }
+
+    selProd.innerHTML = `<option value="">Seleccione un producto...</option>` +
+        prods.map(p => {
+            const suf = p.faltante_cobertura > 0 ? ` (Faltante sugerido: ${p.faltante_cobertura} p.)` : " (Cubierto)";
+            return `<option value="${p.id_producto}">[${p.sku}] ${p.nombre_producto}${suf}</option>`;
+        }).join("");
+
+    let targetId = idProdDefault;
+    if (!targetId) {
+        const conFaltante = prods.find(p => p.faltante_cobertura > 0);
+        targetId = conFaltante ? conFaltante.id_producto : prods[0].id_producto;
+    }
+
+    selProd.value = targetId;
+    actualizarCamposModalReposicion(targetId);
+
+    modal.style.display = "flex";
+}
+
+function actualizarCamposModalReposicion(idProd) {
+    const prods = (AppState.demanda && AppState.demanda.datos && AppState.demanda.datos.productos) || [];
+    const p = prods.find(item => item.id_producto === idProd);
+
+    const elDisp = document.getElementById("modal-rep-disp");
+    const elNec = document.getElementById("modal-rep-nec");
+    const elPend = document.getElementById("modal-rep-pend");
+    const inputCant = document.getElementById("modal-rep-input-cantidad");
+
+    if (!p) {
+        if (elDisp) elDisp.textContent = "--";
+        if (elNec) elNec.textContent = "--";
+        if (elPend) elPend.textContent = "--";
+        if (inputCant) inputCant.value = "";
+        return;
+    }
+
+    if (elDisp) elDisp.textContent = p.disponible;
+    if (elNec) elNec.textContent = p.necesidad;
+    if (elPend) elPend.textContent = p.pendientes_recibir;
+
+    // Prefill con faltante sugerido si es > 0, o 10
+    if (inputCant) {
+        inputCant.value = p.faltante_cobertura > 0 ? p.faltante_cobertura : 10;
+    }
+}
+
+async function ejecutarConfirmacionReposicion() {
+    const selProd = document.getElementById("modal-rep-select-producto");
+    const inputCant = document.getElementById("modal-rep-input-cantidad");
+    const inputResp = document.getElementById("modal-rep-input-responsable");
+    const modal = document.getElementById("modal-reposicion-overlay");
+
+    const idProd = selProd ? parseInt(selProd.value) : 0;
+    const cantidad = inputCant ? parseInt(inputCant.value) : 0;
+    const responsable = inputResp ? inputResp.value.trim() : "Planificador de Demanda";
+
+    if (idProd <= 0) {
+        alert("Por favor selecciona un producto válido.");
+        return;
+    }
+    if (cantidad <= 0 || isNaN(cantidad)) {
+        alert("La cantidad debe ser un número entero mayor que cero.");
+        return;
+    }
+
+    try {
+        const res = await fetch("/api/predicciones/solicitar-reposicion", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                id_producto: idProd,
+                cantidad: cantidad,
+                responsable: responsable,
+                nota: "Solicitud registrada desde Planificación de demanda"
+            })
         });
+
+        const j = await res.json();
+        if (modal) modal.style.display = "none";
+
+        if (j.exito) {
+            reproducirSonido("exito");
+            alert(j.mensaje || `Solicitud guardada: +${cantidad} pares en 'Pendiente de recibir'.`);
+            cargarPrediccionesOperativas(true);
+        } else {
+            alert(`Error: ${j.error || "No se pudo registrar la solicitud."}`);
+        }
+    } catch (e) {
+        console.error("Error al registrar solicitud de reposición:", e);
+        alert("Error de comunicación al guardar la solicitud.");
     }
 }
 
@@ -1992,7 +2518,7 @@ async function cargarPrediccionesExcel() {
         const json = await res.json();
         if (!json.exito) return;
 
-        const cats = json.datos.categorias || [];
+        const cats = json.categorias || (json.datos && json.datos.categorias) || [];
         const ctxExcel = document.getElementById("chart-plan-excel");
         if (ctxExcel && cats.length > 0) {
             if (AppState.charts.planExcel) AppState.charts.planExcel.destroy();
@@ -2002,8 +2528,8 @@ async function cargarPrediccionesExcel() {
                 data: {
                     labels: cats.map(c => c.categoria),
                     datasets: [
-                        { label: "Real 2024 (pares)", data: cats.map(c => c.real_2024), backgroundColor: "#0ea5e9", borderRadius: 4 },
-                        { label: "Proyección 2025 (pares)", data: cats.map(c => c.proyeccion_2025_tendencia), backgroundColor: "#f59e0b", borderRadius: 4 }
+                        { label: "Real 2024 (pares)", data: cats.map(c => c.evaluacion_2024 ? c.evaluacion_2024.real_2024_pares : (c.real_2024 || 0)), backgroundColor: "#0ea5e9", borderRadius: 4 },
+                        { label: "Proyección 2025 tendencia (pares)", data: cats.map(c => c.proyeccion_2025_exploratoria ? c.proyeccion_2025_exploratoria.trend_2025_pares : (c.proyeccion_2025_tendencia || 0)), backgroundColor: "#f59e0b", borderRadius: 4 }
                     ]
                 },
                 options: {
@@ -2019,46 +2545,6 @@ async function cargarPrediccionesExcel() {
         }
     } catch (e) {
         console.warn("Error cargando predicciones de excel:", e);
-    }
-}
-
-function abrirModalReposicion(idProd, nombre, cantidad) {
-    AppState.productoSeleccionadoReposicion = { id: idProd, nombre: nombre, cantidad: cantidad };
-    const modal = document.getElementById("modal-reposicion-overlay");
-    const msg = document.getElementById("modal-reposicion-mensaje");
-    if (msg) msg.textContent = `¿Desea ingresar el pedido sugerido de ${cantidad} pares para ${nombre}?`;
-    if (modal) modal.style.display = "flex";
-}
-
-async function ejecutarConfirmacionReposicion() {
-    if (!AppState.productoSeleccionadoReposicion) return;
-    const { id, nombre, cantidad } = AppState.productoSeleccionadoReposicion;
-
-    try {
-        const res = await fetch("/api/inventario/movimiento", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                id_producto: id,
-                tipo_accion: "ENTRADA",
-                cantidad: cantidad,
-                canal_venta: "Bodega Central Manaco",
-                responsable: "Planificador de Producción"
-            })
-        });
-        const respJson = await res.json();
-        document.getElementById("modal-reposicion-overlay").style.display = "none";
-
-        if (respJson.exito) {
-            reproducirSonido("exito");
-            alert(`Reposición confirmada: +${cantidad} pares de ${nombre}.`);
-            cargarDatosGenerales(false);
-            cargarPrediccionesOperativas();
-        } else {
-            alert(`Error: ${respJson.error || 'No se pudo registrar la reposición'}`);
-        }
-    } catch (e) {
-        console.error("Error confirmando reposición:", e);
     }
 }
 

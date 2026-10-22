@@ -667,9 +667,13 @@ def api_predicciones_operativas():
     """Pronóstico a 7 días y cálculo de reposición sugerida sobre ventas operativas."""
     try:
         id_prod_str = request.args.get("id_producto")
-        id_prod = int(id_prod_str) if id_prod_str and id_prod_str.isdigit() else None
-        lead_time = int(request.args.get("lead_time", 7))
-        stock_seg = int(request.args.get("stock_seguridad", 10))
+        id_prod = int(id_prod_str) if (id_prod_str and id_prod_str.isdigit()) else None
+        
+        lead_time_str = request.args.get("lead_time")
+        lead_time = int(lead_time_str) if (lead_time_str and lead_time_str.isdigit() and int(lead_time_str) > 0) else None
+        
+        stock_seg_str = request.args.get("stock_seguridad")
+        stock_seg = int(stock_seg_str) if (stock_seg_str and stock_seg_str.isdigit() and int(stock_seg_str) >= 0) else None
 
         res = evaluar_pronostico_ventas_operativas(
             db_instancia=db_manaco,
@@ -682,29 +686,89 @@ def api_predicciones_operativas():
         return jsonify({"exito": False, "error": str(e)}), 500
 
 
-@app.route("/api/inventario/confirmar-reposicion", methods=["POST"])
-def api_inventario_confirmar_reposicion():
-    """Confirma interactivamente la orden de reposición sugerida para un producto."""
+@app.route("/api/predicciones/solicitar-reposicion", methods=["POST"])
+def api_predicciones_solicitar_reposicion():
+    """
+    Registra una solicitud de reposición preventiva en 'pedidos_pendientes'.
+    No altera el stock_actual del almacén hasta que el pedido sea recepcionado físicamente.
+    """
     try:
         datos = request.get_json(silent=True) or {}
         id_prod = int(datos.get("id_producto", 0))
         cantidad = int(datos.get("cantidad", 0))
-        responsable = datos.get("responsable", "Supervisor de Abastecimiento")
+        responsable = datos.get("responsable", "Planificador de Demanda")
+        nota = datos.get("nota", "Solicitud de reposición preventiva")
 
         if id_prod <= 0 or cantidad <= 0:
-            return jsonify({"exito": False, "error": "Parámetros de reposición inválidos"}), 400
+            return jsonify({"exito": False, "error": "Producto o cantidad inválida (debe ser mayor a 0)."}), 400
 
-        res = db_manaco.registrar_movimiento_operativo(
-            id_producto=id_prod,
-            accion="ENTRADA",
-            cantidad=cantidad,
-            origen="planificacion_reposicion",
-            responsable=responsable,
-            nota=f"Reposición sugerida confirmada (+{cantidad} pares)"
-        )
-        return jsonify(res)
+        conn = db_manaco.obtener_conexion()
+        try:
+            cur = conn.cursor()
+            if db_manaco.motor == "postgresql":
+                cur.execute("""
+                    UPDATE inventario_calzado
+                    SET pedidos_pendientes = COALESCE(pedidos_pendientes, 0) + %s,
+                        ultima_actualizacion = CURRENT_TIMESTAMP
+                    WHERE id_producto = %s
+                    RETURNING id_producto, nombre_producto, stock_actual, pedidos_pendientes;
+                """, (cantidad, id_prod))
+                fila = cur.fetchone()
+            else:
+                cur.execute("""
+                    UPDATE inventario_calzado
+                    SET pedidos_pendientes = COALESCE(pedidos_pendientes, 0) + ?,
+                        ultima_actualizacion = datetime('now')
+                    WHERE id_producto = ?;
+                """, (cantidad, id_prod))
+                cur.execute("""
+                    SELECT id_producto, nombre_producto, stock_actual, pedidos_pendientes
+                    FROM inventario_calzado WHERE id_producto = ?;
+                """, (id_prod,))
+                fila = cur.fetchone()
+            conn.commit()
+
+            if not fila:
+                return jsonify({"exito": False, "error": f"Producto #{id_prod} no encontrado."}), 404
+
+            return jsonify({
+                "exito": True,
+                "id_producto": fila[0],
+                "nombre_producto": fila[1],
+                "stock_disponible": fila[2],
+                "pedidos_pendientes": fila[3],
+                "cantidad_solicitada": cantidad,
+                "mensaje": f"Solicitud registrada: +{cantidad} pares en 'Pendiente de recibir' para {fila[1]}. El stock actual ({fila[2]} pares) permanece intacto hasta su recepción física."
+            })
+        finally:
+            conn.close()
     except Exception as e:
         return jsonify({"exito": False, "error": str(e)}), 500
+
+
+@app.route("/api/predicciones/restablecer-pendientes", methods=["POST"])
+def api_predicciones_restablecer_pendientes():
+    """Restablece los pedidos pendientes a 0 para pruebas del planificador."""
+    try:
+        conn = db_manaco.obtener_conexion()
+        try:
+            cur = conn.cursor()
+            if db_manaco.motor == "postgresql":
+                cur.execute("UPDATE inventario_calzado SET pedidos_pendientes = 0;")
+            else:
+                cur.execute("UPDATE inventario_calzado SET pedidos_pendientes = 0;")
+            conn.commit()
+            return jsonify({"exito": True, "mensaje": "Pedidos pendientes restablecidos a 0."})
+        finally:
+            conn.close()
+    except Exception as e:
+        return jsonify({"exito": False, "error": str(e)}), 500
+
+
+@app.route("/api/inventario/confirmar-reposicion", methods=["POST"])
+def api_inventario_confirmar_reposicion():
+    """Redirige funcionalmente a registrar solicitud en pendientes sin alterar stock actual."""
+    return api_predicciones_solicitar_reposicion()
 
 
 # =====================================================================
