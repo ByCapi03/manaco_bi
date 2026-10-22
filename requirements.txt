@@ -16,5 +16,12 @@ ipykernel>=6.25.0
 matplotlib>=3.8.0
 seaborn>=0.13.0
 
+# Visión Artificial y Deep Learning
+tensorflow>=2.16.0
+opencv-python>=4.8.0
+
+# Aplicación Web y Dashboard
+Flask>=3.0.0
+
 # Utilidades
 python-dotenv>=1.0.0
