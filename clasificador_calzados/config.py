@@ -32,9 +32,25 @@ NOMBRES_CLASES = {
 
 # Mapeo a dim_producto en la base de datos PostgreSQL/SQLite
 MAPEO_DB = {
-    "calzado_deportivo": {"id_producto": 1, "codigo_sa6": "640411", "precio_bs": 240.00, "precio_usd": 34.50},
-    "calzado_casual":    {"id_producto": 2, "codigo_sa6": "640399", "precio_bs": 290.00, "precio_usd": 41.60},
-    "calzado_formal":    {"id_producto": 3, "codigo_sa6": "640420", "precio_bs": 350.00, "precio_usd": 50.30}
+    "calzado_deportivo": {"id_producto": 1, "codigo_sa6": "640411", "precio_bs": 295.08, "precio_usd": 42.40},
+    "calzado_casual":    {"id_producto": 3, "codigo_sa6": "640399", "precio_bs": 279.82, "precio_usd": 40.20},
+    "calzado_formal":    {"id_producto": 5, "codigo_sa6": "640420", "precio_bs": 468.94, "precio_usd": 67.38}
+}
+
+# Mapeo de categorías visuales de la CNN a los dos modelos específicos del catálogo
+MAPEO_CATEGORIA_A_PRODUCTOS = {
+    "calzado_deportivo": [
+        {"id_producto": 1, "codigo_sku": "DEP-BAS", "nombre": "Deportivo Básico", "linea": "Básico", "icono": "👟"},
+        {"id_producto": 2, "codigo_sku": "DEP-CNF", "nombre": "Deportivo Confort", "linea": "Confort", "icono": "👟"}
+    ],
+    "calzado_casual": [
+        {"id_producto": 3, "codigo_sku": "CAS-BAS", "nombre": "Casual Básico", "linea": "Básico", "icono": "👞"},
+        {"id_producto": 4, "codigo_sku": "CAS-CNF", "nombre": "Casual Confort", "linea": "Confort", "icono": "👞"}
+    ],
+    "calzado_formal": [
+        {"id_producto": 5, "codigo_sku": "VES-BAS", "nombre": "Vestir Básico", "linea": "Básico", "icono": "👞"},
+        {"id_producto": 6, "codigo_sku": "VES-CNF", "nombre": "Vestir Confort", "linea": "Confort", "icono": "👞"}
+    ]
 }
 
 # Colores característicos en formato BGR para OpenCV y HEX para CSS

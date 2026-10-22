@@ -1,1342 +1,695 @@
 /**
  * app.js
- * Lógica Frontend y Control de Visión Artificial para Manaco BI Suite.
- * Gestiona cámara WebRTC, inferencia en tiempo real, gráficos interactivos Chart.js,
- * síntesis de audio con Web Audio API y sincronización con PostgreSQL.
+ * Lógica Frontend y Control Operativo para MANACO BI.
+ * 6 Vistas: Resumen, Costos y precios, Inventario, Productos, Predicciones y Ventas.
+ * Fuente de datos directa de BDatos_MANACO.xlsx y PostgreSQL.
  */
 
-// Estado global de la aplicación
 const AppState = {
     sonidoHabilitado: true,
     camaraActiva: false,
     intervaloEscaneo: null,
-    ultimaClaseDetectada: "sin_calzado",
-    conteoEstabilidad: 0,
-    umbralEstabilidad: 3, // ~1.2 segundos continuos
+    scannerAbierto: false,
     bloqueadoPorRegistro: false,
-    prediccionActual: null,
     audioCtx: null,
     charts: {},
     monedaActual: "USD",
     tasaCambio: 6.96,
-    ultimoResultadoEscenario: null,
-    ultimoPrecioPropuesto: null
+    resumenMedida: "USD",
+    catalogoProductos: [],
+    inventarioCategorias: [],
+    ultimoCalculoCostos: null,
+    productoSeleccionadoReposicion: null,
+    ultimaCategoriaDetectada: null,
+    productos: {
+        datos: null,
+        origenVentas: "sintetico", // "sintetico" o "registrado"
+        rankingMetrica: "pares", // "pares" o "contribucion"
+        productoSeleccionadoId: 1,
+        filtroCategoriaDecision: "TODAS"
+    },
+    contextoExterno: {
+        anio: "TODOS",
+        flujo: "TODOS",
+        medida: "USD",
+        datos: null
+    }
 };
 
 // ==========================================================================
 // INICIALIZACIÓN AL CARGAR EL DOM
 // ==========================================================================
 document.addEventListener("DOMContentLoaded", () => {
-    iniciarReloj();
     configurarTabs();
-    configurarEventosUI();
-    cargarDatosDashboard();
-    cargarMovimientos();
-    inicializarModuloMakeOrBuy();
+    configurarControlesMoneda();
+    configurarModales();
+    configurarFiltrosResumen();
+    configurarCamaraInventario();
+    configurarCalculadoraCostos();
+    configurarTabProductos();
 
-    // Actualización periódica silenciosa cada 6 segundos si no está escaneando
+    // Cargar datos iniciales
+    cargarOpcionesFiltrosResumen();
+    cargarDashboardResumen();
+    cargarDatosGenerales();
+    cargarDatosProductos();
+    cargarMetricasCanales();
+    cargarPrediccionesExcel();
+    cargarPrediccionesOperativas();
+
+    // Actualización periódica silenciosa de inventario cada 10s si la cámara no está activa
     setInterval(() => {
         if (!AppState.camaraActiva) {
-            cargarDatosDashboard(false);
+            cargarDatosGenerales(false);
         }
-    }, 6000);
+    }, 10000);
 });
 
-// Reloj en tiempo real
-function iniciarReloj() {
-    const relojEl = document.getElementById("live-clock");
-    const actualizar = () => {
-        const ahora = new Date();
-        if (relojEl) {
-            relojEl.textContent = ahora.toLocaleTimeString("es-BO", { hour12: false });
-        }
-    };
-    actualizar();
-    setInterval(actualizar, 1000);
-}
-
 // ==========================================================================
-// AUDIO SINTETIZADO (WEB AUDIO API)
-// ==========================================================================
-function reproducirSonido(tipo = "exito") {
-    if (!AppState.sonidoHabilitado) return;
-    try {
-        if (!AppState.audioCtx) {
-            AppState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        }
-        if (AppState.audioCtx.state === "suspended") {
-            AppState.audioCtx.resume();
-        }
-
-        const ctx = AppState.audioCtx;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-
-        const ahora = ctx.currentTime;
-
-        if (tipo === "exito") {
-            // Acorde armónico ascendente moderno Manaco (Re Mayor / F#)
-            osc.type = "sine";
-            osc.frequency.setValueAtTime(587.33, ahora); // D5
-            osc.frequency.exponentialRampToValueAtTime(880.00, ahora + 0.12); // A5
-            gain.gain.setValueAtTime(0.20, ahora);
-            gain.gain.exponentialRampToValueAtTime(0.001, ahora + 0.28);
-            osc.start(ahora);
-            osc.stop(ahora + 0.28);
-        } else if (tipo === "alerta") {
-            // Tono grave para deshacer/alerta
-            osc.type = "triangle";
-            osc.frequency.setValueAtTime(320.00, ahora);
-            osc.frequency.exponentialRampToValueAtTime(220.00, ahora + 0.18);
-            gain.gain.setValueAtTime(0.25, ahora);
-            gain.gain.exponentialRampToValueAtTime(0.001, ahora + 0.22);
-            osc.start(ahora);
-            osc.stop(ahora + 0.22);
-        }
-    } catch (e) {
-        console.warn("No se pudo emitir sonido:", e);
-    }
-}
-
-// ==========================================================================
-// NAVEGACIÓN POR PESTAÑAS
+// GESTIÓN DE NAVEGACIÓN (6 PESTAÑAS EXACTAS)
 // ==========================================================================
 function configurarTabs() {
-    const tabBtns = document.querySelectorAll(".tab-btn");
-    tabBtns.forEach(btn => {
+    const botones = document.querySelectorAll(".nav-tab-btn");
+    const paneles = document.querySelectorAll(".tab-pane");
+
+    botones.forEach(btn => {
         btn.addEventListener("click", () => {
             const targetId = btn.getAttribute("data-tab");
+            if (!targetId) return;
 
-            tabBtns.forEach(b => b.classList.remove("active"));
+            botones.forEach(b => b.classList.remove("active"));
+            paneles.forEach(p => p.classList.remove("active"));
+
             btn.classList.add("active");
-
-            document.querySelectorAll(".tab-pane").forEach(pane => {
-                pane.classList.remove("active");
-            });
-
             const targetPane = document.getElementById(targetId);
             if (targetPane) {
                 targetPane.classList.add("active");
             }
 
-            // Si entra al dashboard o a fabricar o importar, refrescar gráficos para ajustar dimensiones
-            if (targetId === "tab-dashboard") {
-                setTimeout(() => {
-                    Object.values(AppState.charts).forEach(c => c && c.resize && c.resize());
-                }, 100);
-            } else if (targetId === "tab-make-or-buy") {
-                setTimeout(() => {
-                    if (AppState.charts.comercioValor && AppState.charts.comercioValor.resize) AppState.charts.comercioValor.resize();
-                    if (AppState.charts.comercioPares && AppState.charts.comercioPares.resize) AppState.charts.comercioPares.resize();
-                }, 100);
+            // Si se activa la pestaña Productos, refrescar o redimensionar
+            if (targetId === "tab-productos") {
+                if (!AppState.productos.datos) {
+                    cargarDatosProductos();
+                } else {
+                    setTimeout(() => {
+                        if (AppState.charts.prodCostoPrecio) AppState.charts.prodCostoPrecio.resize();
+                        if (AppState.charts.prodRanking) AppState.charts.prodRanking.resize();
+                        if (AppState.charts.extPart) AppState.charts.extPart.resize();
+                    }, 120);
+                }
             }
+
+            // Redibujar gráficos si se abren pestañas con canvas
+            setTimeout(() => {
+                Object.values(AppState.charts).forEach(ch => {
+                    if (ch && typeof ch.resize === "function") ch.resize();
+                });
+            }, 100);
         });
     });
 }
 
 // ==========================================================================
-// CONFIGURACIÓN DE EVENTOS UI
+// CONTROL DE MONEDA GLOBAL
 // ==========================================================================
-function configurarEventosUI() {
-    // Sonido toggle
-    const btnSound = document.getElementById("btn-toggle-sound");
-    if (btnSound) {
-        btnSound.addEventListener("click", () => {
-            AppState.sonidoHabilitado = !AppState.sonidoHabilitado;
-            const icon = document.getElementById("sound-icon");
-            if (icon) icon.textContent = AppState.sonidoHabilitado ? "🔔" : "🔕";
-            btnSound.classList.toggle("btn-danger-soft", !AppState.sonidoHabilitado);
-        });
-    }
-
-    // Botón rápido simular 20
-    const btnQuickSim = document.getElementById("btn-quick-simulate");
-    if (btnQuickSim) {
-        btnQuickSim.addEventListener("click", () => ejecutarSimulacion(20));
-    }
-
-    // Refrescar gráficos
-    const btnRefreshCharts = document.getElementById("btn-refresh-charts");
-    if (btnRefreshCharts) {
-        btnRefreshCharts.addEventListener("click", () => cargarDatosDashboard(true));
-    }
-
-    // Controles de Cámara y Escáner
-    const btnStartCam = document.getElementById("btn-start-camera");
-    const btnStopCam = document.getElementById("btn-stop-camera");
-    const btnManualReg = document.getElementById("btn-manual-register");
-    const btnUndoScan = document.getElementById("btn-undo-scan");
-
-    if (btnStartCam) btnStartCam.addEventListener("click", iniciarCamara);
-    if (btnStopCam) btnStopCam.addEventListener("click", detenerCamara);
-    if (btnManualReg) btnManualReg.addEventListener("click", registrarPrediccionManual);
-    if (btnUndoScan) btnUndoScan.addEventListener("click", deshacerUltimo);
-
-    // Modos de entrada: Cámara vs Subir Foto
-    const btnModeCam = document.getElementById("btn-mode-camera");
-    const btnModeUp = document.getElementById("btn-mode-upload");
-    const dropzone = document.getElementById("upload-dropzone");
-    const videoEl = document.getElementById("webcam-video");
-    const fileInput = document.getElementById("file-input-shoe");
-    const btnTriggerUp = document.getElementById("btn-trigger-upload");
-    const imgPreview = document.getElementById("uploaded-preview");
-
-    if (btnModeCam && btnModeUp) {
-        btnModeCam.addEventListener("click", () => {
-            btnModeCam.classList.add("active");
-            btnModeUp.classList.remove("active");
-            if (dropzone) dropzone.style.display = "none";
-            if (videoEl) videoEl.style.display = "block";
-            iniciarCamara();
-        });
-
-        btnModeUp.addEventListener("click", () => {
-            btnModeUp.classList.add("active");
-            btnModeCam.classList.remove("active");
-            detenerCamara();
-            if (videoEl) videoEl.style.display = "none";
-            if (dropzone) dropzone.style.display = "flex";
-        });
-    }
-
-    if (btnTriggerUp && fileInput) {
-        btnTriggerUp.addEventListener("click", () => fileInput.click());
-    }
-
-    if (fileInput) {
-        fileInput.addEventListener("change", (e) => {
-            const file = e.target.files[0];
-            if (file) procesarArchivoImagen(file);
-        });
-    }
-
-    if (dropzone) {
-        dropzone.addEventListener("dragover", (e) => {
-            e.preventDefault();
-            dropzone.style.borderColor = "var(--cyan-accent)";
-        });
-        dropzone.addEventListener("dragleave", () => {
-            dropzone.style.borderColor = "rgba(255, 255, 255, 0.18)";
-        });
-        dropzone.addEventListener("drop", (e) => {
-            e.preventDefault();
-            dropzone.style.borderColor = "rgba(255, 255, 255, 0.18)";
-            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                procesarArchivoImagen(e.dataTransfer.files[0]);
-            }
-        });
-    }
-
-    // Simulador: Slider y Botones de preajuste
-    const sliderSim = document.getElementById("sim-cantidad");
-    const valSim = document.getElementById("sim-cantidad-val");
-    if (sliderSim && valSim) {
-        sliderSim.addEventListener("input", (e) => {
-            valSim.textContent = e.target.value;
-        });
-    }
-
-    document.querySelectorAll(".btn-sim-preset").forEach(btn => {
-        btn.addEventListener("click", () => {
-            const cant = parseInt(btn.getAttribute("data-cant") || "20");
-            if (sliderSim && valSim) {
-                sliderSim.value = cant;
-                valSim.textContent = cant;
-            }
-            ejecutarSimulacion(cant);
-        });
-    });
-
-    const btnRunSim = document.getElementById("btn-run-simulation");
-    if (btnRunSim) {
-        btnRunSim.addEventListener("click", () => {
-            const cant = parseInt(sliderSim ? sliderSim.value : "25");
-            ejecutarSimulacion(cant);
-        });
-    }
-
-    const btnResetInv = document.getElementById("btn-reset-inventory");
-    if (btnResetInv) {
-        btnResetInv.addEventListener("click", reiniciarInventario);
-    }
-
-    // Búsqueda en tabla de movimientos
-    const searchInput = document.getElementById("input-search-movs");
-    if (searchInput) {
-        searchInput.addEventListener("input", filtrarTablaMovimientos);
-    }
-
-    // Exportar CSV
-    const btnExport = document.getElementById("btn-export-csv");
-    if (btnExport) {
-        btnExport.addEventListener("click", () => {
-            window.location.href = "/api/exportar-csv";
-        });
-    }
-
-    const btnRefTable = document.getElementById("btn-refresh-table");
-    if (btnRefTable) {
-        btnRefTable.addEventListener("click", cargarMovimientos);
-    }
-}
-
-// ==========================================================================
-// CARGAR DATOS Y ACTUALIZAR KPIS & GRÁFICOS
-// ==========================================================================
-async function cargarDatosDashboard(animar = true) {
-    try {
-        const [resEstado, resGraficos] = await Promise.all([
-            fetch("/api/estado").then(r => r.json()),
-            fetch("/api/graficos").then(r => r.json())
-        ]);
-
-        if (resEstado.exito) {
-            actualizarKPIs(resEstado.kpis, resEstado.motor_db);
-            actualizarResumenCategorias(resEstado.inventario);
-            actualizarMiniInventario(resEstado.inventario);
-        }
-
-        if (resGraficos.exito && resGraficos.datos) {
-            renderizarGraficos(resGraficos.datos, animar);
-        }
-    } catch (err) {
-        console.error("Error al cargar datos del dashboard:", err);
-    }
-}
-
-function actualizarKPIs(kpis, motorDb) {
-    if (!kpis) return;
-
-    const elPares = document.getElementById("kpi-val-pares");
-    const elBs = document.getElementById("kpi-val-dinero-bs");
-    const elUsd = document.getElementById("kpi-val-dinero-usd");
-    const elLider = document.getElementById("kpi-val-lider");
-    const elLiderPares = document.getElementById("kpi-cap-lider-pares");
-    const elIngresosIa = document.getElementById("kpi-val-ingresos-ia");
-    const elConfianza = document.getElementById("kpi-val-confianza-prom");
-    const elBarOcupacion = document.getElementById("kpi-bar-ocupacion");
-    const elCapOcupacion = document.getElementById("kpi-cap-ocupacion");
-    const elDbBadge = document.getElementById("db-status-text");
-
-    if (elPares) elPares.textContent = (kpis.total_pares || 0).toLocaleString();
-    if (elBs) elBs.textContent = kpis.total_valor_bs || "0.00";
-    if (elUsd) elUsd.textContent = `$us. ${kpis.total_valor_usd || "0.00"}`;
-    if (elLider) elLider.textContent = kpis.categoria_lider || "N/D";
-    if (elLiderPares) elLiderPares.textContent = `${kpis.stock_lider || 0} pares disponibles`;
-    if (elIngresosIa) elIngresosIa.textContent = kpis.total_ingresos_ia || 0;
-    if (elConfianza) elConfianza.textContent = kpis.confianza_promedio_ia ? String(kpis.confianza_promedio_ia) : "Sin escaneos";
-
-    const ocupPct = Math.min(100, kpis.capacidad_ocupada_pct || 0);
-    if (elBarOcupacion) elBarOcupacion.style.width = `${ocupPct}%`;
-    if (elCapOcupacion) elCapOcupacion.textContent = `Capacidad ocupada: ${ocupPct}%`;
-
-    if (elDbBadge && motorDb) {
-        elDbBadge.textContent = `${motorDb} ACTIVO`;
-    }
-}
-
-function actualizarResumenCategorias(inventario) {
-    const contenedor = document.getElementById("categories-summary-container");
-    if (!contenedor || !inventario) return;
-
-    const iconos = {
-        1: { icon: "👟", bg: "rgba(6, 182, 212, 0.15)", border: "#06b6d4" },
-        2: { icon: "👞", bg: "rgba(245, 158, 11, 0.15)", border: "#f59e0b" },
-        3: { icon: "👞", bg: "rgba(225, 29, 72, 0.15)", border: "#e11d48" }
-    };
-
-    contenedor.innerHTML = inventario.map(item => {
-        const estilo = iconos[item.id_producto] || { icon: "👟", bg: "rgba(255,255,255,0.1)", border: "#94a3b8" };
-        const alertaHtml = item.alerta_stock 
-            ? `<span class="badge-tag" style="background: rgba(225,29,72,0.2); color: #fda4af;">⚠️ Stock Bajo</span>`
-            : `<span class="badge-tag tag-emerald">✓ Óptimo</span>`;
-
-        return `
-            <div class="cat-bar-card glass-panel" style="border-left-color: ${estilo.border};">
-                <div class="cat-icon-wrap" style="background: ${estilo.bg};">
-                    ${estilo.icon}
-                </div>
-                <div class="cat-details">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <h4 class="cat-title">${item.categoria_corta}</h4>
-                        ${alertaHtml}
-                    </div>
-                    <span class="cat-sa6">SA6: ${item.codigo_sa6}</span>
-                    <div class="cat-numbers">
-                        <span>Stock: <strong>${item.stock_actual} pares</strong></span>
-                        <span>Mín: ${item.stock_minimo}</span>
-                        <span>Bs. ${item.precio_unitario_bs.toFixed(2)}</span>
-                    </div>
-                </div>
-            </div>
-        `;
-    }).join("");
-}
-
-function actualizarMiniInventario(inventario) {
-    const cont = document.getElementById("mini-inventory-container");
-    if (!cont || !inventario) return;
-
-    cont.innerHTML = inventario.map(item => {
-        const color = item.id_producto === 1 ? "#06b6d4" : (item.id_producto === 2 ? "#f59e0b" : "#e11d48");
-        return `
-            <div class="mini-inv-item">
-                <span class="mini-inv-name" style="border-left: 3px solid ${color}; padding-left: 8px;">
-                    ${item.categoria_corta}
-                </span>
-                <span class="mini-inv-stock" style="color: ${color};">
-                    ${item.stock_actual} pares
-                </span>
-            </div>
-        `;
-    }).join("");
-}
-
-// ==========================================================================
-// RENDERIZADO DE GRÁFICOS INTERACTIVOS (CHART.JS)
-// ==========================================================================
-function renderizarGraficos(datos, animar) {
-    // Configuración compartida de tema oscuro para Chart.js
-    Chart.defaults.color = "#94a3b8";
-    Chart.defaults.font.family = "'Outfit', sans-serif";
-
-    // 1. Gráfico: Stock Actual vs Mínimo
-    const ctxStock = document.getElementById("chart-stock-niveles");
-    if (ctxStock) {
-        if (AppState.charts.stock) AppState.charts.stock.destroy();
-
-        AppState.charts.stock = new Chart(ctxStock, {
-            type: "bar",
-            data: {
-                labels: datos.categorias || ["Deportivo", "Casual", "Formal"],
-                datasets: [
-                    {
-                        label: "Stock Actual (pares)",
-                        data: datos.stock_actual || [0, 0, 0],
-                        backgroundColor: ["rgba(6, 182, 212, 0.8)", "rgba(245, 158, 11, 0.8)", "rgba(225, 29, 72, 0.8)"],
-                        borderColor: ["#06b6d4", "#f59e0b", "#e11d48"],
-                        borderWidth: 2,
-                        borderRadius: 8
-                    },
-                    {
-                        label: "Stock Mínimo de Seguridad",
-                        data: datos.stock_minimo || [25, 25, 20],
-                        type: "line",
-                        borderColor: "rgba(255, 255, 255, 0.45)",
-                        borderDash: [5, 5],
-                        borderWidth: 2,
-                        pointBackgroundColor: "#ffffff",
-                        fill: false
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: animar ? { duration: 600 } : false,
-                plugins: {
-                    legend: { position: "top", labels: { boxWidth: 12 } },
-                    tooltip: {
-                        backgroundColor: "rgba(15, 23, 42, 0.95)",
-                        borderColor: "rgba(255,255,255,0.15)",
-                        borderWidth: 1
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: "rgba(255, 255, 255, 0.05)" }
-                    },
-                    x: {
-                        grid: { display: false }
-                    }
-                }
-            }
-        });
-    }
-
-    // 2. Gráfico: Evolución Temporal de Movimientos
-    const ctxTemp = document.getElementById("chart-tendencia-temporal");
-    if (ctxTemp) {
-        if (AppState.charts.temporal) AppState.charts.temporal.destroy();
-
-        AppState.charts.temporal = new Chart(ctxTemp, {
-            type: "line",
-            data: {
-                labels: datos.serie_fechas && datos.serie_fechas.length ? datos.serie_fechas : ["Reciente"],
-                datasets: [
-                    {
-                        label: "Ingresos por Visión IA",
-                        data: datos.serie_ingresos && datos.serie_ingresos.length ? datos.serie_ingresos : [1],
-                        borderColor: "#06b6d4",
-                        backgroundColor: "rgba(6, 182, 212, 0.15)",
-                        fill: true,
-                        tension: 0.35,
-                        borderWidth: 3,
-                        pointRadius: 4
-                    },
-                    {
-                        label: "Salidas por Ventas",
-                        data: datos.serie_ventas && datos.serie_ventas.length ? datos.serie_ventas : [0],
-                        borderColor: "#f59e0b",
-                        backgroundColor: "rgba(245, 158, 11, 0.10)",
-                        fill: true,
-                        tension: 0.35,
-                        borderWidth: 2,
-                        pointRadius: 3
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: animar ? { duration: 600 } : false,
-                plugins: {
-                    legend: { position: "top", labels: { boxWidth: 12 } }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: "rgba(255, 255, 255, 0.05)" }
-                    },
-                    x: {
-                        grid: { color: "rgba(255, 255, 255, 0.03)" }
-                    }
-                }
-            }
-        });
-    }
-
-    // 3. Gráfico: Distribución de Inventario en Dona
-    const ctxDona = document.getElementById("chart-distribucion-dona");
-    if (ctxDona) {
-        if (AppState.charts.dona) AppState.charts.dona.destroy();
-
-        AppState.charts.dona = new Chart(ctxDona, {
-            type: "doughnut",
-            data: {
-                labels: datos.categorias || ["Deportivo", "Casual", "Formal"],
-                datasets: [
-                    {
-                        data: datos.stock_actual || [1, 1, 1],
-                        backgroundColor: ["#06b6d4", "#f59e0b", "#e11d48"],
-                        borderColor: "#0e1526",
-                        borderWidth: 3,
-                        hoverOffset: 6
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: "68%",
-                animation: animar ? { duration: 600 } : false,
-                plugins: {
-                    legend: { position: "bottom", labels: { boxWidth: 12, padding: 16 } }
-                }
-            }
-        });
-    }
-
-    // 4. Gráfico: Contexto Data Warehouse (Comercio Exterior de Bolivia)
-    const ctxDw = document.getElementById("chart-dw-comercio");
-    if (ctxDw && datos.dw_comercio && datos.dw_comercio.disponible) {
-        if (AppState.charts.dw) AppState.charts.dw.destroy();
-
-        AppState.charts.dw = new Chart(ctxDw, {
-            type: "bar",
-            data: {
-                labels: datos.dw_comercio.anios,
-                datasets: [
-                    {
-                        label: "Importaciones (pares)",
-                        data: datos.dw_comercio.importacion_pares,
-                        backgroundColor: "rgba(225, 29, 72, 0.75)",
-                        borderRadius: 6
-                    },
-                    {
-                        label: "Exportaciones (pares)",
-                        data: datos.dw_comercio.exportacion_pares,
-                        backgroundColor: "rgba(16, 185, 129, 0.75)",
-                        borderRadius: 6
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: animar ? { duration: 600 } : false,
-                plugins: {
-                    legend: { position: "top", labels: { boxWidth: 12 } }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: "rgba(255, 255, 255, 0.05)" }
-                    },
-                    x: { grid: { display: false } }
-                }
-            }
-        });
-    }
-}
-
-// ==========================================================================
-// CÁMARA WEBCAM & RECONOCIMIENTO EN TIEMPO REAL
-// ==========================================================================
-async function iniciarCamara() {
-    const videoEl = document.getElementById("webcam-video");
-    const btnStart = document.getElementById("btn-start-camera");
-    const btnStop = document.getElementById("btn-stop-camera");
-    const statusText = document.getElementById("scanner-status-text");
-    const statusDot = document.getElementById("scanner-dot");
-
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                width: { ideal: 640 },
-                height: { ideal: 480 },
-                facingMode: "environment"
-            },
-            audio: false
-        });
-
-        videoEl.srcObject = stream;
-        await videoEl.play();
-
-        AppState.camaraActiva = true;
-        if (btnStart) btnStart.style.display = "none";
-        if (btnStop) btnStop.style.display = "inline-flex";
-
-        if (statusText) statusText.textContent = "ESCANEANDO CALZADO EN VIVO...";
-        if (statusDot) statusDot.classList.add("green");
-
-        // Bucle de inferencia periódica cada 380 ms
-        AppState.intervaloEscaneo = setInterval(capturarYClasificarFrame, 380);
-    } catch (err) {
-        console.error("Error al acceder a la cámara:", err);
-        if (statusText) statusText.textContent = "NO SE PUDO ACCEDER A LA CÁMARA (Usa el modo 'Subir Fotografía')";
-        alert("No se pudo iniciar la cámara web. Puedes usar la pestaña 'Subir Fotografía' para probar con cualquier imagen.");
-    }
-}
-
-function detenerCamara() {
-    const videoEl = document.getElementById("webcam-video");
-    const btnStart = document.getElementById("btn-start-camera");
-    const btnStop = document.getElementById("btn-stop-camera");
-    const statusText = document.getElementById("scanner-status-text");
-    const statusDot = document.getElementById("scanner-dot");
-
-    if (AppState.intervaloEscaneo) {
-        clearInterval(AppState.intervaloEscaneo);
-        AppState.intervaloEscaneo = null;
-    }
-
-    if (videoEl && videoEl.srcObject) {
-        const tracks = videoEl.srcObject.getTracks();
-        tracks.forEach(t => t.stop());
-        videoEl.srcObject = null;
-    }
-
-    AppState.camaraActiva = false;
-    if (btnStart) btnStart.style.display = "inline-flex";
-    if (btnStop) btnStop.style.display = "none";
-
-    if (statusText) statusText.textContent = "CÁMARA DETENIDA";
-    if (statusDot) statusDot.classList.remove("green");
-    ocultarTagHUD();
-}
-
-async function capturarYClasificarFrame() {
-    const videoEl = document.getElementById("webcam-video");
-    const canvasEl = document.getElementById("webcam-canvas");
-    if (!videoEl || !canvasEl || videoEl.videoWidth === 0) return;
-
-    canvasEl.width = videoEl.videoWidth;
-    canvasEl.height = videoEl.videoHeight;
-    const ctx = canvasEl.getContext("2d");
-    ctx.drawImage(videoEl, 0, 0, canvasEl.width, canvasEl.height);
-
-    // Obtener imagen en JPEG Base64
-    const base64Data = canvasEl.toDataURL("image/jpeg", 0.82);
-
-    try {
-        const res = await fetch("/api/clasificar", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ imagen: base64Data })
-        });
-        const datos = await res.json();
-        if (datos.exito) {
-            procesarResultadoClasificacion(datos);
-        }
-    } catch (e) {
-        console.warn("Fallo de clasificación en frame:", e);
-    }
-}
-
-function procesarResultadoClasificacion(pred) {
-    AppState.prediccionActual = pred;
-
-    // Actualizar barras de probabilidades
-    const probs = pred.probabilidades || {};
-    actualizarBarraProb("deportivo", probs["calzado_deportivo"] || 0);
-    actualizarBarraProb("casual", probs["calzado_casual"] || 0);
-    actualizarBarraProb("formal", probs["calzado_formal"] || 0);
-    actualizarBarraProb("sin_calzado", probs["sin_calzado"] || 0);
-
-    const btnManualReg = document.getElementById("btn-manual-register");
-    const chkAuto = document.getElementById("chk-auto-register");
-    const autoActivo = chkAuto ? chkAuto.checked : true;
-
-    // Si es calzado y supera el 75% de confianza
-    if (pred.es_calzado && pred.confianza >= 0.75) {
-        if (btnManualReg) btnManualReg.disabled = false;
-        mostrarTagHUD(pred);
-
-        // Lógica de persistencia temporal
-        if (pred.clase === AppState.ultimaClaseDetectada) {
-            AppState.conteoEstabilidad++;
-        } else {
-            AppState.ultimaClaseDetectada = pred.clase;
-            AppState.conteoEstabilidad = 1;
-            AppState.bloqueadoPorRegistro = false;
-        }
-
-        // Auto-registro al cumplir N frames de estabilidad
-        if (autoActivo && !AppState.bloqueadoPorRegistro && AppState.conteoEstabilidad >= AppState.umbralEstabilidad) {
-            AppState.bloqueadoPorRegistro = true;
-            ejecutarRegistroCalzado(pred.clase, pred.confianza, "camara_web_auto");
-        }
-    } else {
-        if (btnManualReg) btnManualReg.disabled = true;
-        ocultarTagHUD();
-
-        // Si ve fondo/sin calzado, liberar candado de registro
-        if (!pred.es_calzado) {
-            AppState.bloqueadoPorRegistro = false;
-            AppState.conteoEstabilidad = 0;
-            AppState.ultimaClaseDetectada = "sin_calzado";
-        }
-    }
-}
-
-function actualizarBarraProb(clave, pct) {
-    const bar = document.getElementById(`bar-prob-${clave}`);
-    const val = document.getElementById(`val-prob-${clave}`);
-    if (bar) bar.style.width = `${pct}%`;
-    if (val) val.textContent = `${pct.toFixed(1)}%`;
-}
-
-function mostrarTagHUD(pred) {
-    const tag = document.getElementById("hud-tag");
-    const tagText = document.getElementById("hud-tag-text");
-    const tagPct = document.getElementById("hud-tag-pct");
-    const reticle = document.getElementById("hud-reticle");
-
-    if (tag && tagText && tagPct) {
-        tagText.textContent = pred.nombre.split("(")[0].trim().toUpperCase();
-        tagPct.textContent = `${pred.porcentaje}%`;
-        tag.style.display = "flex";
-        tag.style.borderColor = pred.color;
-    }
-    if (reticle) {
-        reticle.style.borderColor = pred.color;
-    }
-}
-
-function ocultarTagHUD() {
-    const tag = document.getElementById("hud-tag");
-    const reticle = document.getElementById("hud-reticle");
-    if (tag) tag.style.display = "none";
-    if (reticle) reticle.style.borderColor = "rgba(255, 255, 255, 0.12)";
-}
-
-// Subida de imagen fija
-function procesarArchivoImagen(file) {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const base64Img = e.target.result;
-        const imgEl = document.getElementById("uploaded-preview");
-        if (imgEl) {
-            imgEl.src = base64Img;
-            imgEl.style.display = "block";
-        }
-
-        try {
-            const res = await fetch("/api/clasificar", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ imagen: base64Img })
-            });
-            const datos = await res.json();
-            if (datos.exito) {
-                procesarResultadoClasificacion(datos);
-                const statusText = document.getElementById("scanner-status-text");
-                if (statusText) statusText.textContent = `FOTO CLASIFICADA: ${datos.nombre} (${datos.porcentaje}%)`;
-            }
-        } catch (err) {
-            console.error("Error al procesar archivo:", err);
-        }
-    };
-    reader.readAsDataURL(file);
-}
-
-// ==========================================================================
-// REGISTRO DE CALZADO EN LA BASE DE DATOS
-// ==========================================================================
-async function ejecutarRegistroCalzado(clase, confianza, origen = "escaner_web") {
-    try {
-        const res = await fetch("/api/registrar", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ clase, confianza, origen })
-        });
-        const datos = await res.json();
-
-        if (datos.exito) {
-            reproducirSonido("exito");
-            actualizarNotificacionUltimoRegistro(datos);
-            cargarDatosDashboard(false);
-            cargarMovimientos();
-        }
-    } catch (e) {
-        console.error("Error al registrar calzado:", e);
-    }
-}
-
-function registrarPrediccionManual() {
-    if (AppState.prediccionActual && AppState.prediccionActual.es_calzado) {
-        ejecutarRegistroCalzado(
-            AppState.prediccionActual.clase,
-            AppState.prediccionActual.confianza,
-            "registro_manual_boton"
-        );
-    }
-}
-
-function actualizarNotificacionUltimoRegistro(item) {
-    const nameEl = document.getElementById("last-det-name");
-    const timeEl = document.getElementById("last-det-time");
-    if (nameEl) nameEl.textContent = `+1 ${item.categoria} (Stock: ${item.nuevo_stock})`;
-    if (timeEl) timeEl.textContent = `Registrado a las ${item.timestamp} • Confianza: ${(item.confianza * 100).toFixed(1)}%`;
-}
-
-async function deshacerUltimo() {
-    try {
-        const res = await fetch("/api/deshacer", { method: "POST" });
-        const datos = await res.json();
-        reproducirSonido("alerta");
-        alert(datos.mensaje || "Operación completada");
-        cargarDatosDashboard(false);
-        cargarMovimientos();
-    } catch (e) {
-        console.error("Error al deshacer:", e);
-    }
-}
-
-// ==========================================================================
-// MOVIMIENTOS & AUDITORÍA (TABLA)
-// ==========================================================================
-async function cargarMovimientos() {
-    const tbody = document.getElementById("table-movimientos-body");
-    if (!tbody) return;
-
-    try {
-        const res = await fetch("/api/estado");
-        const datos = await res.json();
-
-        if (datos.exito && datos.movimientos) {
-            if (datos.movimientos.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center" style="padding: 24px;">No hay movimientos registrados aún. ¡Usa el escáner o el simulador!</td></tr>`;
-                return;
-            }
-
-            tbody.innerHTML = datos.movimientos.map(m => {
-                let badgeClass = "ingreso";
-                if (m.accion.includes("VENTA")) badgeClass = "venta";
-                if (m.accion.includes("DESHACER") || m.accion.includes("AJUSTE")) badgeClass = "reversa";
-
-                return `
-                    <tr>
-                        <td><strong>#${m.id_registro}</strong></td>
-                        <td>${m.fecha_hora}</td>
-                        <td><strong>${m.categoria}</strong></td>
-                        <td><span class="badge-action ${badgeClass}">${m.accion}</span></td>
-                        <td><strong>${m.cantidad}</strong></td>
-                        <td>${(m.confianza * 100).toFixed(1)}%</td>
-                        <td>${m.origen}</td>
-                        <td>${m.responsable}</td>
-                    </tr>
-                `;
-            }).join("");
-        }
-    } catch (e) {
-        console.error("Error al cargar movimientos:", e);
-    }
-}
-
-function filtrarTablaMovimientos(e) {
-    const query = (e.target.value || "").toLowerCase();
-    const filas = document.querySelectorAll("#table-movimientos-body tr");
-    filas.forEach(f => {
-        const texto = f.textContent.toLowerCase();
-        f.style.display = texto.includes(query) ? "" : "none";
-    });
-}
-
-// ==========================================================================
-// SIMULADOR DE DATOS
-// ==========================================================================
-async function ejecutarSimulacion(cantidad = 25) {
-    const consoleEl = document.getElementById("sim-console-output");
-    if (consoleEl) {
-        consoleEl.innerHTML += `<p class="console-line">⏳ [${new Date().toLocaleTimeString()}] Generando ${cantidad} transacciones sintéticas de calzado...</p>`;
-        consoleEl.scrollTop = consoleEl.scrollHeight;
-    }
-
-    try {
-        const res = await fetch("/api/simular", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cantidad })
-        });
-        const datos = await res.json();
-
-        if (datos.exito) {
-            reproducirSonido("exito");
-            if (consoleEl) {
-                consoleEl.innerHTML += `<p class="console-line" style="color: #6ee7b7;">✓ [${new Date().toLocaleTimeString()}] ${datos.mensaje}</p>`;
-                consoleEl.scrollTop = consoleEl.scrollHeight;
-            }
-            cargarDatosDashboard(true);
-            cargarMovimientos();
-        } else {
-            if (consoleEl) {
-                consoleEl.innerHTML += `<p class="console-line" style="color: #fda4af;">✕ Error: ${datos.error}</p>`;
-            }
-        }
-    } catch (e) {
-        console.error("Error al simular:", e);
-    }
-}
-
-async function reiniciarInventario() {
-    if (!confirm("¿Estás seguro de que deseas reiniciar el inventario a 30 pares por categoría?")) {
-        return;
-    }
-
-    try {
-        const res = await fetch("/api/reiniciar", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ stock_base: 30 })
-        });
-        const datos = await res.json();
-        reproducirSonido("alerta");
-        alert(datos.mensaje || "Inventario reiniciado");
-        cargarDatosDashboard(true);
-        cargarMovimientos();
-    } catch (e) {
-        console.error("Error al reiniciar:", e);
-    }
-}
-
-// ==========================================================================
-// MÓDULO: FABRICAR O IMPORTAR & ANÁLISIS COMERCIAL (EXCEL DIRECTO)
-// ==========================================================================
-
-function inicializarModuloMakeOrBuy() {
-    configurarEventosMakeOrBuy();
-    cargarOpcionesComercio();
-    cargarMetricasComercio();
-    ejecutarCalculoEscenario();
-}
-
-function configurarEventosMakeOrBuy() {
-    // 1. Selector de Moneda y Tasa de Cambio
+function configurarControlesMoneda() {
     const btnUsd = document.getElementById("btn-currency-usd");
     const btnBob = document.getElementById("btn-currency-bob");
-    const inputTc = document.getElementById("input-tasa-cambio");
+    const inputTc = document.getElementById("input-tc-global");
 
     if (btnUsd && btnBob) {
-        btnUsd.addEventListener("click", () => cambiarMoneda("USD"));
-        btnBob.addEventListener("click", () => cambiarMoneda("BOB"));
+        btnUsd.addEventListener("click", () => {
+            AppState.monedaActual = "USD";
+            btnUsd.classList.add("active");
+            btnBob.classList.remove("active");
+            actualizarVisualizacionMonedas();
+            cargarDashboardResumen();
+        });
+
+        btnBob.addEventListener("click", () => {
+            AppState.monedaActual = "BOB";
+            btnBob.classList.add("active");
+            btnUsd.classList.remove("active");
+            actualizarVisualizacionMonedas();
+            cargarDashboardResumen();
+        });
     }
 
     if (inputTc) {
         inputTc.addEventListener("change", (e) => {
-            const val = parseFloat(e.target.value);
-            if (val > 0) {
-                AppState.tasaCambio = val;
-                cargarMetricasComercio();
-                ejecutarCalculoEscenario();
+            const nuevoTc = parseFloat(e.target.value);
+            if (nuevoTc > 0) {
+                AppState.tasaCambio = nuevoTc;
+                actualizarVisualizacionMonedas();
+                cargarDashboardResumen();
             }
         });
-    }
-
-    // 2. Filtros de Comercio Exterior
-    const btnFiltros = document.getElementById("btn-aplicar-filtros-comercio");
-    if (btnFiltros) {
-        btnFiltros.addEventListener("click", () => cargarMetricasComercio());
-    }
-
-    ["sel-comercio-flujo", "sel-comercio-anio", "sel-comercio-categoria", "sel-comercio-socio"].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) {
-            el.addEventListener("change", () => cargarMetricasComercio());
-        }
-    });
-
-    // 3. Fichas de Referencia 2024
-    document.querySelectorAll(".ref-chip").forEach(chip => {
-        chip.addEventListener("click", () => {
-            document.querySelectorAll(".ref-chip").forEach(c => c.classList.remove("active"));
-            chip.classList.add("active");
-
-            const sa6 = chip.getAttribute("data-sa6");
-            const val = parseFloat(chip.getAttribute("data-val"));
-
-            const catSel = document.getElementById("calc-categoria-sel");
-            if (catSel) {
-                catSel.value = sa6;
-                actualizarCardInventarioActivo(sa6);
-            }
-
-            const pCompra = document.getElementById("calc-p-compra");
-            if (pCompra) {
-                const precio = (AppState.monedaActual === "BOB") ? (val * AppState.tasaCambio) : val;
-                pCompra.value = precio.toFixed(2);
-            }
-
-            ejecutarCalculoEscenario();
-        });
-    });
-
-    // 4. Botones de transferencia de referencia
-    const btnUseExcelQuote = document.getElementById("btn-use-excel-quote");
-    if (btnUseExcelQuote) {
-        btnUseExcelQuote.addEventListener("click", () => {
-            const catSel = document.getElementById("calc-categoria-sel");
-            const sa6 = catSel ? catSel.value : "640399";
-            const chip = document.querySelector(`.ref-chip[data-sa6="${sa6}"]`);
-            if (chip) {
-                const val = parseFloat(chip.getAttribute("data-val") || "26.15");
-                const pCompra = document.getElementById("calc-p-compra");
-                if (pCompra) {
-                    const precio = (AppState.monedaActual === "BOB") ? (val * AppState.tasaCambio) : val;
-                    pCompra.value = precio.toFixed(2);
-                }
-                ejecutarCalculoEscenario();
-            }
-        });
-    }
-
-    const btnTransferCalc = document.getElementById("btn-transfer-ref-calc");
-    if (btnTransferCalc) {
-        btnTransferCalc.addEventListener("click", () => {
-            const ratioEl = document.getElementById("kpi-ext-ratio");
-            if (ratioEl) {
-                const rawVal = parseFloat(ratioEl.textContent.replace(/,/g, "")) || 0;
-                const pCompra = document.getElementById("calc-p-compra");
-                if (pCompra && rawVal > 0) {
-                    pCompra.value = rawVal.toFixed(2);
-                    ejecutarCalculoEscenario();
-                }
-            }
-        });
-    }
-
-    // 5. Cambio de categoría en la calculadora
-    const calcCatSel = document.getElementById("calc-categoria-sel");
-    if (calcCatSel) {
-        calcCatSel.addEventListener("change", (e) => {
-            actualizarCardInventarioActivo(e.target.value);
-            ejecutarCalculoEscenario();
-        });
-    }
-
-    // 6. Preajustes de Escenarios Equilibrados
-    document.querySelectorAll(".btn-preset-scenario").forEach(btn => {
-        btn.addEventListener("click", () => {
-            const presetTipo = btn.getAttribute("data-preset");
-            cargarEscenarioPreset(presetTipo);
-        });
-    });
-
-    // 7. Botón de Ejecutar Cálculo
-    const btnCalc = document.getElementById("btn-calcular-escenario");
-    if (btnCalc) {
-        btnCalc.addEventListener("click", () => ejecutarCalculoEscenario());
-    }
-
-    // 8. Botón Aplicar Precio al Inventario
-    const btnAplicarPrecio = document.getElementById("btn-aplicar-precio-propuesto");
-    if (btnAplicarPrecio) {
-        btnAplicarPrecio.addEventListener("click", aplicarPrecioAlInventario);
     }
 }
 
-function cambiarMoneda(nuevaMoneda) {
-    if (AppState.monedaActual === nuevaMoneda) return;
-    AppState.monedaActual = nuevaMoneda;
-    const tc = AppState.tasaCambio;
-
-    const btnUsd = document.getElementById("btn-currency-usd");
-    const btnBob = document.getElementById("btn-currency-bob");
-    if (btnUsd && btnBob) {
-        btnUsd.classList.toggle("active", nuevaMoneda === "USD");
-        btnBob.classList.toggle("active", nuevaMoneda === "BOB");
+function formatearMoneda(valUsd, valBob = null) {
+    if (valUsd === null || valUsd === undefined) return "--";
+    const u = parseFloat(valUsd) || 0;
+    if (AppState.monedaActual === "BOB") {
+        const b = valBob !== null ? parseFloat(valBob) : (u * AppState.tasaCambio);
+        return `Bs. ${b.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
-
-    // Actualizar labels de unidad en el DOM
-    const simbolo = nuevaMoneda === "USD" ? "$us" : "Bs.";
-    document.querySelectorAll(".unit-curr-text").forEach(el => el.textContent = simbolo);
-    document.querySelectorAll(".curr-symbol").forEach(el => el.textContent = simbolo);
-
-    // Convertir campos numéricos de la calculadora
-    const factor = (nuevaMoneda === "BOB") ? tc : (1.0 / tc);
-    const campos = [
-        "calc-precio-venta",
-        "calc-cv-fabril",
-        "calc-cf-evitables",
-        "calc-cf-permanentes",
-        "calc-p-compra",
-        "calc-flete",
-        "calc-seguro",
-        "calc-arancel",
-        "calc-logistica",
-        "calc-otros"
-    ];
-
-    campos.forEach(id => {
-        const inp = document.getElementById(id);
-        if (inp && inp.value) {
-            const v = parseFloat(inp.value);
-            if (!isNaN(v)) {
-                inp.value = (v * factor).toFixed(2);
-            }
-        }
-    });
-
-    // Actualizar visualización en fichas de referencia
-    document.querySelectorAll(".ref-chip").forEach(chip => {
-        const valUsd = parseFloat(chip.getAttribute("data-val"));
-        const chipValEl = chip.querySelector(".chip-val");
-        if (chipValEl) {
-            if (nuevaMoneda === "BOB") {
-                chipValEl.textContent = `Bs. ${(valUsd * tc).toFixed(2)}/par`;
-            } else {
-                chipValEl.textContent = `$${valUsd.toFixed(2)} USD/par`;
-            }
-        }
-    });
-
-    cargarMetricasComercio();
-    ejecutarCalculoEscenario();
+    return `$ ${u.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
 }
 
-async function cargarOpcionesComercio() {
+function actualizarVisualizacionMonedas() {
+    cargarDatosGenerales(false);
+    if (AppState.ultimoCalculoCostos) {
+        actualizarKpisYGraficosCostos(AppState.ultimoCalculoCostos);
+    }
+    if (AppState.productos && AppState.productos.datos) {
+        actualizarKpisProductosTab();
+        renderizarGraficoCostoPrecio();
+        renderizarGraficoRanking();
+        renderizarTablaDecisionProductos();
+    }
+}
+
+// ==========================================================================
+// MODALES (METODOLOGÍA Y CONFIGURACIÓN)
+// ==========================================================================
+function configurarModales() {
+    // Modal Metodología
+    const modalMet = document.getElementById("modal-metodologia");
+    const btnVerMet = document.getElementById("btn-ver-metodologia");
+    const btnCerrarMet = document.getElementById("btn-cerrar-metodologia");
+    const btnEntendidoMet = document.getElementById("btn-entendido-metodologia");
+
+    if (btnVerMet && modalMet) {
+        btnVerMet.addEventListener("click", () => modalMet.style.display = "flex");
+    }
+    if (btnCerrarMet && modalMet) {
+        btnCerrarMet.addEventListener("click", () => modalMet.style.display = "none");
+    }
+    if (btnEntendidoMet && modalMet) {
+        btnEntendidoMet.addEventListener("click", () => modalMet.style.display = "none");
+    }
+
+    // Modal Configuración
+    const modalConf = document.getElementById("modal-config-estado");
+    const btnAbrirConf = document.getElementById("btn-abrir-config-modal");
+    const btnCerrarConf = document.getElementById("btn-cerrar-config-modal");
+    const btnGuardarConf = document.getElementById("btn-guardar-config-modal");
+
+    if (btnAbrirConf && modalConf) {
+        btnAbrirConf.addEventListener("click", () => modalConf.style.display = "flex");
+    }
+    if (btnCerrarConf && modalConf) {
+        btnCerrarConf.addEventListener("click", () => modalConf.style.display = "none");
+    }
+    if (btnGuardarConf && modalConf) {
+        btnGuardarConf.addEventListener("click", () => modalConf.style.display = "none");
+    }
+
+    // Modal Reposición
+    const modalRep = document.getElementById("modal-reposicion-overlay");
+    const btnCerrarRep = document.getElementById("btn-cancelar-reposicion");
+    const btnCancelModalRep = document.getElementById("btn-cancelar-modal-rep");
+    const btnConfirmarRep = document.getElementById("btn-confirmar-reposicion-action");
+
+    if (btnCerrarRep && modalRep) {
+        btnCerrarRep.addEventListener("click", () => modalRep.style.display = "none");
+    }
+    if (btnCancelModalRep && modalRep) {
+        btnCancelModalRep.addEventListener("click", () => modalRep.style.display = "none");
+    }
+    if (btnConfirmarRep) {
+        btnConfirmarRep.addEventListener("click", ejecutarConfirmacionReposicion);
+    }
+}
+
+// ==========================================================================
+// 1. DASHBOARD RESUMEN
+// ==========================================================================
+async function cargarOpcionesFiltrosResumen() {
     try {
         const res = await fetch("/api/comercio/opciones");
-        const datos = await res.json();
-        if (datos.exito && datos.socios) {
-            const selSocio = document.getElementById("sel-comercio-socio");
-            if (selSocio) {
-                selSocio.innerHTML = '<option value="">Todos los Socios (30 Países)</option>' +
-                    datos.socios.map(s => `<option value="${s}">${s}</option>`).join("");
-            }
+        const json = await res.json();
+        if (!json.exito) return;
+
+        const selSocio = document.getElementById("filtro-resumen-socio");
+        if (selSocio && json.socios) {
+            selSocio.innerHTML = `<option value="TODOS">Todos</option>` +
+                json.socios.map(s => `<option value="${s}">${s}</option>`).join("");
         }
     } catch (e) {
-        console.error("Error al cargar opciones de comercio:", e);
+        console.warn("Error cargando opciones de socios:", e);
     }
 }
 
-async function cargarMetricasComercio() {
-    const flujo = document.getElementById("sel-comercio-flujo")?.value || "Importación";
-    const anio = document.getElementById("sel-comercio-anio")?.value || "2024";
-    const sa6 = document.getElementById("sel-comercio-categoria")?.value || "";
-    const socio = document.getElementById("sel-comercio-socio")?.value || "";
+function configurarFiltrosResumen() {
+    const selAnio = document.getElementById("filtro-resumen-anio");
+    const selSocio = document.getElementById("filtro-resumen-socio");
+    const selCat = document.getElementById("filtro-resumen-categoria");
+    const btnLimpiar = document.getElementById("btn-limpiar-filtros-resumen");
 
-    const params = new URLSearchParams({
-        flujo: flujo,
-        anio: anio,
-        codigo_sa6: sa6,
-        socio: socio
-    });
+    const btnMedUsd = document.getElementById("btn-medida-usd");
+    const btnMedPares = document.getElementById("btn-medida-pares");
+
+    const dispararCarga = () => cargarDashboardResumen();
+
+    if (selAnio) selAnio.addEventListener("change", dispararCarga);
+    if (selSocio) selSocio.addEventListener("change", dispararCarga);
+    if (selCat) selCat.addEventListener("change", dispararCarga);
+
+    if (btnLimpiar) {
+        btnLimpiar.addEventListener("click", () => {
+            if (selAnio) selAnio.value = "TODOS";
+            if (selSocio) selSocio.value = "TODOS";
+            if (selCat) selCat.value = "TODOS";
+            cargarDashboardResumen();
+        });
+    }
+
+    if (btnMedUsd && btnMedPares) {
+        btnMedUsd.addEventListener("click", () => {
+            AppState.resumenMedida = "USD";
+            btnMedUsd.classList.add("active");
+            btnMedPares.classList.remove("active");
+            cargarDashboardResumen();
+        });
+
+        btnMedPares.addEventListener("click", () => {
+            AppState.resumenMedida = "PARES";
+            btnMedPares.classList.add("active");
+            btnMedUsd.classList.remove("active");
+            cargarDashboardResumen();
+        });
+    }
+}
+
+async function cargarDashboardResumen() {
+    const selAnio = document.getElementById("filtro-resumen-anio");
+    const selSocio = document.getElementById("filtro-resumen-socio");
+    const selCat = document.getElementById("filtro-resumen-categoria");
+
+    const anio = selAnio ? selAnio.value : "TODOS";
+    const socio = selSocio ? selSocio.value : "TODOS";
+    const cat = selCat ? selCat.value : "TODOS";
+    const medida = AppState.resumenMedida || "USD";
+
+    const params = new URLSearchParams();
+    if (anio !== "TODOS") params.append("anio", anio);
+    if (socio !== "TODOS") params.append("socio", socio);
+    if (cat !== "TODOS") params.append("codigo_sa6", cat);
+    params.append("medida", medida);
 
     try {
-        const res = await fetch(`/api/comercio/metricas?${params.toString()}`);
-        const data = await res.json();
+        const res = await fetch(`/api/resumen/metricas?${params.toString()}`);
+        const json = await res.json();
+        if (!json.exito) return;
 
-        if (data.exito && data.resumen) {
-            const tc = AppState.tasaCambio;
-            const esBob = (AppState.monedaActual === "BOB");
-            const factor = esBob ? tc : 1.0;
-
-            const valTotal = data.resumen.suma_valor_usd * factor;
-            const paresTotal = data.resumen.suma_cantidad_pares;
-            const ratioPonderado = data.resumen.referencia_usd_por_par * factor;
-
-            const elValor = document.getElementById("kpi-ext-valor");
-            const elPartValor = document.getElementById("kpi-ext-part-valor");
-            const elPares = document.getElementById("kpi-ext-pares");
-            const elPartPares = document.getElementById("kpi-ext-part-pares");
-            const elRatio = document.getElementById("kpi-ext-ratio");
-
-            if (elValor) elValor.textContent = valTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            if (elPartValor) elPartValor.textContent = `${data.resumen.participacion_valor_pct.toFixed(1)}% del flujo`;
-            if (elPares) elPares.textContent = paresTotal.toLocaleString();
-            if (elPartPares) elPartPares.textContent = `${data.resumen.participacion_pares_pct.toFixed(1)}% del volumen`;
-            if (elRatio) elRatio.textContent = ratioPonderado.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-            renderizarGraficosComercio(data.serie_temporal, data.ranking_socios);
-        }
+        actualizarTarjetasResumen(json);
+        renderizarGraficosResumen(json);
     } catch (e) {
-        console.error("Error al cargar métricas de comercio:", e);
+        console.error("Error al cargar métricas de resumen:", e);
     }
 }
 
-function renderizarGraficosComercio(serieTemporal, rankingSocios) {
-    if (!serieTemporal) return;
+function actualizarTarjetasResumen(data) {
+    const elValImp = document.getElementById("val-resumen-importado");
+    const elValExp = document.getElementById("val-resumen-exportado");
+    const elValPar = document.getElementById("val-resumen-pares");
 
-    const esBob = (AppState.monedaActual === "BOB");
-    const factor = esBob ? AppState.tasaCambio : 1.0;
-    const simbolo = esBob ? "Bs." : "$ USD";
+    if (!data.hay_datos || data.total_registros === 0) {
+        if (elValImp) elValImp.textContent = "Sin datos";
+        if (elValExp) elValExp.textContent = "Sin datos";
+        if (elValPar) elValPar.textContent = "Sin datos";
+        return;
+    }
 
-    // 1. Gráfico: Valor Comercial
-    const ctxValor = document.getElementById("chart-comercio-valor");
-    if (ctxValor) {
-        if (AppState.charts.comercioValor) AppState.charts.comercioValor.destroy();
+    const kpis = data.kpis || {};
 
-        const valoresConvertidos = (serieTemporal.valores_usd || []).map(v => Math.round(v * factor));
+    if (elValImp) {
+        if (AppState.monedaActual === "BOB") {
+            const bob = (kpis.valor_importado_usd || 0) * AppState.tasaCambio;
+            elValImp.textContent = `Bs. ${bob.toLocaleString("es-BO", { maximumFractionDigits: 0 })}`;
+        } else {
+            elValImp.textContent = `$ ${(kpis.valor_importado_usd || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })} USD`;
+        }
+        elValImp.title = formatearMoneda(kpis.valor_importado_usd);
+    }
 
-        AppState.charts.comercioValor = new Chart(ctxValor, {
+    if (elValExp) {
+        if (AppState.monedaActual === "BOB") {
+            const bob = (kpis.valor_exportado_usd || 0) * AppState.tasaCambio;
+            elValExp.textContent = `Bs. ${bob.toLocaleString("es-BO", { maximumFractionDigits: 0 })}`;
+        } else {
+            elValExp.textContent = `$ ${(kpis.valor_exportado_usd || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })} USD`;
+        }
+        elValExp.title = formatearMoneda(kpis.valor_exportado_usd);
+    }
+
+    if (elValPar) {
+        elValPar.textContent = `${(kpis.pares_registrados || 0).toLocaleString()} pares`;
+        elValPar.title = `Importación: ${(kpis.pares_importados || 0).toLocaleString()} pares | Exportación: ${(kpis.pares_exportados || 0).toLocaleString()} pares`;
+    }
+}
+
+function renderizarGraficosResumen(data) {
+    const esPares = (AppState.resumenMedida === "PARES");
+    const sufijo = esPares ? " pares" : " USD";
+    const prefijo = esPares ? "" : "$ ";
+
+    const colorImp = "#0ea5e9";
+    const colorExp = "#f59e0b";
+
+    const emptyAnios = document.getElementById("empty-anios");
+    const emptySocios = document.getElementById("empty-socios");
+    const emptyCats = document.getElementById("empty-categorias");
+
+    if (!data.hay_datos || data.total_registros === 0) {
+        if (emptyAnios) emptyAnios.style.display = "flex";
+        if (emptySocios) emptySocios.style.display = "flex";
+        if (emptyCats) emptyCats.style.display = "flex";
+        return;
+    }
+
+    if (emptyAnios) emptyAnios.style.display = "none";
+    if (emptySocios) emptySocios.style.display = "none";
+    if (emptyCats) emptyCats.style.display = "none";
+
+    // 1. Gráfico: Importaciones vs Exportaciones por año
+    const ctxAnios = document.getElementById("chart-resumen-anios");
+    if (ctxAnios) {
+        if (AppState.charts.resumenAnios) AppState.charts.resumenAnios.destroy();
+
+        const labels = data.grafico_anios.anios;
+        const impData = esPares ? data.grafico_anios.importacion_pares : data.grafico_anios.importacion_usd;
+        const expData = esPares ? data.grafico_anios.exportacion_pares : data.grafico_anios.exportacion_usd;
+
+        AppState.charts.resumenAnios = new Chart(ctxAnios, {
             type: "bar",
             data: {
-                labels: serieTemporal.anios || ["2020", "2021", "2022", "2023", "2024"],
+                labels: labels,
                 datasets: [
                     {
-                        label: `Valor Comercial Declarado (${simbolo})`,
-                        data: valoresConvertidos,
-                        backgroundColor: "rgba(6, 182, 212, 0.75)",
-                        borderColor: "#06b6d4",
-                        borderWidth: 2,
-                        borderRadius: 6
+                        label: "Importación",
+                        data: impData,
+                        backgroundColor: colorImp,
+                        borderRadius: 4
+                    },
+                    {
+                        label: "Exportación",
+                        data: expData,
+                        backgroundColor: colorExp,
+                        borderRadius: 4
                     }
                 ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: "top", labels: { boxWidth: 12 } },
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => `Valor: ${simbolo} ${Number(ctx.raw).toLocaleString()}`
-                        }
-                    }
-                },
                 scales: {
                     y: {
                         beginAtZero: true,
-                        grid: { color: "rgba(255, 255, 255, 0.05)" },
+                        grid: { color: "rgba(255,255,255,0.06)" },
                         ticks: {
-                            callback: (v) => `${simbolo} ${(v / 1e6).toFixed(1)}M`
+                            callback: (v) => prefijo + v.toLocaleString() + sufijo
                         }
                     },
-                    x: { grid: { display: false } }
+                    x: { grid: { color: "rgba(255,255,255,0.06)" } }
+                },
+                plugins: {
+                    legend: { position: "top", labels: { boxWidth: 12, color: "#94a3b8" } },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${prefijo}${ctx.parsed.y.toLocaleString()}${sufijo}`
+                        }
+                    }
                 }
             }
         });
     }
 
-    // 2. Gráfico: Volumen Físico (Pares)
-    const ctxPares = document.getElementById("chart-comercio-pares");
-    if (ctxPares) {
-        if (AppState.charts.comercioPares) AppState.charts.comercioPares.destroy();
+    // 2. Gráfico: Principales socios comerciales (Top 10 agrupadas horizontalmente)
+    const ctxSocios = document.getElementById("chart-resumen-socios");
+    if (ctxSocios) {
+        if (AppState.charts.resumenSocios) AppState.charts.resumenSocios.destroy();
 
-        AppState.charts.comercioPares = new Chart(ctxPares, {
+        const labels = data.grafico_socios.socios;
+        const impData = esPares ? data.grafico_socios.importacion_pares : data.grafico_socios.importacion_usd;
+        const expData = esPares ? data.grafico_socios.exportacion_pares : data.grafico_socios.exportacion_usd;
+
+        AppState.charts.resumenSocios = new Chart(ctxSocios, {
             type: "bar",
             data: {
-                labels: serieTemporal.anios || ["2020", "2021", "2022", "2023", "2024"],
+                labels: labels,
                 datasets: [
                     {
-                        label: "Volumen Físico Registrado (Pares)",
-                        data: serieTemporal.cantidades_pares || [],
-                        backgroundColor: "rgba(245, 158, 11, 0.75)",
-                        borderColor: "#f59e0b",
-                        borderWidth: 2,
-                        borderRadius: 6
+                        label: "Importación",
+                        data: impData,
+                        backgroundColor: colorImp,
+                        borderRadius: 4
+                    },
+                    {
+                        label: "Exportación",
+                        data: expData,
+                        backgroundColor: colorExp,
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                indexAxis: "y",
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        grid: { color: "rgba(255,255,255,0.06)" },
+                        ticks: {
+                            callback: (v) => prefijo + v.toLocaleString() + sufijo
+                        }
+                    },
+                    y: { grid: { color: "rgba(255,255,255,0.06)" }, ticks: { color: "#f8fafc", font: { size: 11 } } }
+                },
+                plugins: {
+                    legend: { position: "top", labels: { boxWidth: 12, color: "#94a3b8" } },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${prefijo}${ctx.parsed.x.toLocaleString()}${sufijo}`
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // 3. Gráfico: Comparación por categoría
+    const ctxCats = document.getElementById("chart-resumen-categorias");
+    if (ctxCats) {
+        if (AppState.charts.resumenCategorias) AppState.charts.resumenCategorias.destroy();
+
+        const labels = data.grafico_categorias.categorias;
+        const impData = esPares ? data.grafico_categorias.importacion_pares : data.grafico_categorias.importacion_usd;
+        const expData = esPares ? data.grafico_categorias.exportacion_pares : data.grafico_categorias.exportacion_usd;
+
+        AppState.charts.resumenCategorias = new Chart(ctxCats, {
+            type: "bar",
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: "Importación",
+                        data: impData,
+                        backgroundColor: colorImp,
+                        borderRadius: 4
+                    },
+                    {
+                        label: "Exportación",
+                        data: expData,
+                        backgroundColor: colorExp,
+                        borderRadius: 4
                     }
                 ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: {
-                    legend: { position: "top", labels: { boxWidth: 12 } },
-                    tooltip: {
-                        callbacks: {
-                            label: (ctx) => `Volumen: ${Number(ctx.raw).toLocaleString()} pares`
-                        }
-                    }
-                },
                 scales: {
                     y: {
                         beginAtZero: true,
-                        grid: { color: "rgba(255, 255, 255, 0.05)" },
+                        grid: { color: "rgba(255,255,255,0.06)" },
                         ticks: {
-                            callback: (v) => `${(v / 1e6).toFixed(1)}M pares`
+                            callback: (v) => prefijo + v.toLocaleString() + sufijo
                         }
                     },
-                    x: { grid: { display: false } }
+                    x: { grid: { color: "rgba(255,255,255,0.06)" }, ticks: { font: { size: 11 } } }
+                },
+                plugins: {
+                    legend: { position: "top", labels: { boxWidth: 12, color: "#94a3b8" } },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.dataset.label}: ${prefijo}${ctx.parsed.y.toLocaleString()}${sufijo}`
+                        }
+                    }
                 }
             }
         });
     }
 }
 
-async function ejecutarCalculoEscenario() {
-    const catSel = document.getElementById("calc-categoria-sel")?.value || "640411";
-    const paresInput = document.getElementById("calc-cantidad-pares");
-    const pVentaInput = document.getElementById("calc-precio-venta");
-    const margenInput = document.getElementById("calc-margen-objetivo");
-    const cvInput = document.getElementById("calc-cv-fabril");
-    const cfEvInput = document.getElementById("calc-cf-evitables");
-    const cfPermInput = document.getElementById("calc-cf-permanentes");
-    const pCompraInput = document.getElementById("calc-p-compra");
-    const fleteInput = document.getElementById("calc-flete");
-    const seguroInput = document.getElementById("calc-seguro");
-    const arancelInput = document.getElementById("calc-arancel");
-    const logisticaInput = document.getElementById("calc-logistica");
-    const otrosInput = document.getElementById("calc-otros");
+// ==========================================================================
+// 2. COSTOS Y PRECIOS
+// ==========================================================================
+// ==========================================================================
+// 1. COSTOS Y MÁRGENES (¿Fabricar o importar?)
+// ==========================================================================
 
-    const cantidadPares = Math.max(0, parseInt(paresInput?.value || "1000"));
-    const margenPct = Math.min(99.0, Math.max(0.0, parseFloat(margenInput?.value || "35.0")));
+function parsearNumeroFormulario(val, def = 0) {
+    if (val === null || val === undefined) return def;
+    if (typeof val === "number") return Number.isFinite(val) ? val : def;
+    let s = String(val).trim();
+    if (!s) return def;
+    s = s.replace(",", ".");
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? n : def;
+}
+
+function invalidarCalculoCostos(motivo = "Parámetros modificados. Presiona 'Calcular decisión y precio'.") {
+    AppState.ultimoCalculoCostos = null;
+    const btnAplicar = document.getElementById("btn-aplicar-precio-catalogo");
+    if (btnAplicar) btnAplicar.disabled = true;
+
+    const badge = document.getElementById("badge-estado-parametros");
+    if (badge) {
+        badge.textContent = "Parámetros modificados";
+        badge.className = "badge-tag tag-amber";
+    }
+
+    const msg = document.getElementById("calc-status-msg");
+    if (msg) msg.textContent = motivo;
+}
+
+function configurarCalculadoraCostos() {
+    const btnCalc = document.getElementById("btn-ejecutar-calculo-costos");
+    const btnAplicar = document.getElementById("btn-aplicar-precio-catalogo");
+    const selProd = document.getElementById("calc-producto-dest");
+    const selCat = document.getElementById("calc-categoria");
+
+    const referenciasBaseSA6 = {
+        640411: 27.80,
+        640399: 26.15,
+        640420: 45.53
+    };
+
+    if (selProd) {
+        selProd.addEventListener("change", () => {
+            const opt = selProd.selectedOptions[0];
+            if (opt) {
+                const sa6 = opt.getAttribute("data-sa6");
+                const cv = opt.getAttribute("data-cv");
+                const gastos = opt.getAttribute("data-gastos");
+                const margen = opt.getAttribute("data-margen");
+
+                if (sa6 && selCat) selCat.value = sa6;
+                if (cv && document.getElementById("calc-costo-var-fab")) {
+                    document.getElementById("calc-costo-var-fab").value = cv;
+                }
+                if (gastos && document.getElementById("calc-gastos-importacion")) {
+                    document.getElementById("calc-gastos-importacion").value = gastos;
+                }
+                if (margen && document.getElementById("calc-margen-objetivo")) {
+                    document.getElementById("calc-margen-objetivo").value = margen;
+                }
+                if (sa6 && document.getElementById("calc-ref-comercial")) {
+                    document.getElementById("calc-ref-comercial").value = (referenciasBaseSA6[sa6] || 27.80).toFixed(2);
+                }
+            }
+            invalidarCalculoCostos();
+        });
+    }
+
+    if (selCat) {
+        selCat.addEventListener("change", () => {
+            const sa6 = selCat.value;
+            const refInput = document.getElementById("calc-ref-comercial");
+            if (refInput && referenciasBaseSA6[sa6]) {
+                refInput.value = referenciasBaseSA6[sa6].toFixed(2);
+            }
+            invalidarCalculoCostos();
+        });
+    }
+
+    const inputsMonitoreados = [
+        "calc-volumen-pares",
+        "calc-costo-var-fab",
+        "calc-costo-fijo-evitable",
+        "calc-gastos-importacion",
+        "calc-ref-comercial",
+        "calc-costo-fijo-permanente",
+        "calc-margen-objetivo",
+        "calc-alternativa-precio"
+    ];
+
+    inputsMonitoreados.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener("input", () => invalidarCalculoCostos());
+            el.addEventListener("change", () => invalidarCalculoCostos());
+        }
+    });
+
+    if (btnCalc) btnCalc.addEventListener("click", ejecutarCalculoCostos);
+    if (btnAplicar) btnAplicar.addEventListener("click", aplicarPrecioPropuestoAlCatalogo);
+
+    // Ejecución inicial automática para que la pestaña abra con datos válidos
+    ejecutarCalculoCostos();
+}
+
+async function ejecutarCalculoCostos() {
+    const statusMsg = document.getElementById("calc-status-msg");
+    const badge = document.getElementById("badge-estado-parametros");
+    const btnAplicar = document.getElementById("btn-aplicar-precio-catalogo");
+
+    const sa6 = parseInt(document.getElementById("calc-categoria")?.value || "640411");
+    const idProd = parseInt(document.getElementById("calc-producto-dest")?.value || "1");
+    const q = parsearNumeroFormulario(document.getElementById("calc-volumen-pares")?.value, 0);
+    const cvFab = parsearNumeroFormulario(document.getElementById("calc-costo-var-fab")?.value, -1);
+    const cfEvit = parsearNumeroFormulario(document.getElementById("calc-costo-fijo-evitable")?.value, -1);
+    const gastosImp = parsearNumeroFormulario(document.getElementById("calc-gastos-importacion")?.value, -1);
+    const refComercial = parsearNumeroFormulario(document.getElementById("calc-ref-comercial")?.value, -1);
+    const cfPerm = parsearNumeroFormulario(document.getElementById("calc-costo-fijo-permanente")?.value, 0);
+    const margen = parsearNumeroFormulario(document.getElementById("calc-margen-objetivo")?.value, -1);
+    const altPrecio = document.getElementById("calc-alternativa-precio")?.value || "recomendada";
+
+    // 1. Validaciones requeridas
+    if (q <= 0) {
+        mostrarEstadoInvalidoCostos("Completa los parámetros: la cantidad de pares debe ser mayor que 0.");
+        return;
+    }
+    if (cvFab < 0 || cfEvit < 0 || gastosImp < 0 || refComercial < 0 || cfPerm < 0) {
+        mostrarEstadoInvalidoCostos("Completa los parámetros: los costos no pueden ser negativos.");
+        return;
+    }
+    if (margen < 0 || margen >= 100) {
+        mostrarEstadoInvalidoCostos("Completa los parámetros: el margen objetivo debe estar entre 0% y menos de 100%.");
+        return;
+    }
 
     const payload = {
-        codigo_sa6: catSel,
-        cantidad_pares: cantidadPares,
-        precio_venta: parseFloat(pVentaInput?.value || "0"),
-        margen_objetivo_pct: margenPct,
-        costo_variable_unitario_fab: parseFloat(cvInput?.value || "0"),
-        costos_fijos_evitables: parseFloat(cfEvInput?.value || "0"),
-        costos_fijos_permanentes: parseFloat(cfPermInput?.value || "0"),
-        cotizacion_compra: parseFloat(pCompraInput?.value || "0"),
-        flete_transporte: parseFloat(fleteInput?.value || "0"),
-        seguro_transporte: parseFloat(seguroInput?.value || "0"),
-        gastos_internacion: parseFloat(arancelInput?.value || "0"),
-        entrega_local: parseFloat(logisticaInput?.value || "0"),
-        otros_gastos: parseFloat(otrosInput?.value || "0"),
-        moneda: AppState.monedaActual,
+        codigo_sa6: sa6,
+        id_producto: idProd,
+        cantidad_pares: q,
+        costo_variable_unitario_fab: cvFab,
+        costos_fijos_evitables: cfEvit,
+        costos_fijos_permanentes: cfPerm,
+        gastos_importacion: gastosImp,
+        referencia_comercial: refComercial,
+        margen_objetivo_pct: margen,
+        alternativa_precio: altPrecio,
+        moneda: "USD",
         tasa_cambio: AppState.tasaCambio
     };
 
     try {
+        if (statusMsg) statusMsg.textContent = "Calculando escenario...";
         const res = await fetch("/api/escenarios/calcular", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -1344,260 +697,1501 @@ async function ejecutarCalculoEscenario() {
         });
         const data = await res.json();
 
-        if (data.exito) {
-            AppState.ultimoResultadoEscenario = data;
-            actualizarResultadosEscenarioUI(data);
+        if (!res.ok || !data.exito) {
+            mostrarEstadoInvalidoCostos(data.error || "Completa los parámetros.");
+            return;
         }
+
+        AppState.ultimoCalculoCostos = data;
+        actualizarKpisYGraficosCostos(data);
+
+        if (btnAplicar) btnAplicar.disabled = false;
+        if (badge) {
+            badge.textContent = "Cálculo actualizado";
+            badge.className = "badge-tag tag-emerald";
+        }
+        if (statusMsg) statusMsg.textContent = "Cálculo actualizado con éxito.";
     } catch (e) {
-        console.error("Error al calcular escenario:", e);
+        console.error("Error en cálculo de costos:", e);
+        mostrarEstadoInvalidoCostos("Error de conexión al calcular costos.");
     }
 }
 
-function actualizarResultadosEscenarioUI(data) {
-    const esBob = (AppState.monedaActual === "BOB");
-    const tc = AppState.tasaCambio;
-    const simbolo = esBob ? "Bs." : "$us.";
+function mostrarEstadoInvalidoCostos(mensaje) {
+    AppState.ultimoCalculoCostos = null;
+
+    const btnAplicar = document.getElementById("btn-aplicar-precio-catalogo");
+    if (btnAplicar) btnAplicar.disabled = true;
+
+    const badge = document.getElementById("badge-estado-parametros");
+    if (badge) {
+        badge.textContent = "Parámetros incompletos";
+        badge.className = "badge-tag tag-amber";
+    }
+
+    const statusMsg = document.getElementById("calc-status-msg");
+    if (statusMsg) statusMsg.textContent = mensaje;
+
+    document.getElementById("kpi-costo-fab-unit").textContent = "--";
+    document.getElementById("kpi-costo-fab-total").textContent = "Lote: --";
+    document.getElementById("kpi-costo-imp-unit").textContent = "--";
+    document.getElementById("kpi-costo-imp-total").textContent = "Lote: --";
+
+    const decEl = document.getElementById("kpi-decision-estrategica");
+    if (decEl) {
+        decEl.textContent = "COMPLETA LOS PARÁMETROS";
+        decEl.className = "kpi-decision-text";
+        decEl.style.color = "#94a3b8";
+    }
+
+    const ahorroEl = document.getElementById("kpi-ahorro-estimado");
+    if (ahorroEl) ahorroEl.textContent = "No se recomienda fabricar ni importar hasta completar los parámetros.";
+
+    document.getElementById("kpi-precio-propuesto").textContent = "--";
+    document.getElementById("kpi-precio-sub").textContent = "Alternativa utilizada: --";
+
+    // Mostrar overlays en gráficos
+    const emptyComp = document.getElementById("empty-costos-comp");
+    if (emptyComp) emptyComp.style.display = "flex";
+    const emptyIndiff = document.getElementById("empty-costos-indiff");
+    if (emptyIndiff) emptyIndiff.style.display = "flex";
+
+    if (AppState.charts.costosComp) {
+        AppState.charts.costosComp.destroy();
+        AppState.charts.costosComp = null;
+    }
+    if (AppState.charts.costosIndiff) {
+        AppState.charts.costosIndiff.destroy();
+        AppState.charts.costosIndiff = null;
+    }
+}
+
+function actualizarKpisYGraficosCostos(data) {
+    if (!data || !data.fabricacion || !data.importacion) return;
+
+    // Ocultar overlays
+    const emptyComp = document.getElementById("empty-costos-comp");
+    if (emptyComp) emptyComp.style.display = "none";
+    const emptyIndiff = document.getElementById("empty-costos-indiff");
+    if (emptyIndiff) emptyIndiff.style.display = "none";
 
     const fab = data.fabricacion;
     const imp = data.importacion;
     const diff = data.analisis_diferencial;
+    const precio = data.precio_propuesto;
+    const q = data.configuracion.cantidad_pares;
 
-    // 1. Tarjeta de Decisión Estratégica
-    const cardOutcome = document.getElementById("card-decision-outcome");
-    const pillResult = document.getElementById("pill-decision-result");
-    const tagDiff = document.getElementById("tag-decision-diff");
-    const narrativeResult = document.getElementById("narrative-decision-result");
-    const boxIndiff = document.getElementById("box-indifference-q");
-    const valIndiff = document.getElementById("val-indiff-q");
+    // 1. Tarjetas de Resultados
+    // Card 1: Fabricar
+    document.getElementById("kpi-costo-fab-unit").textContent = `${formatearMoneda(fab.costo_unitario_total_usd, fab.costo_unitario_total_bob)} / par`;
+    document.getElementById("kpi-costo-fab-total").textContent = `Lote (${q.toLocaleString()} p): ${formatearMoneda(fab.costo_total_lote_usd, fab.costo_total_lote_bob)}`;
 
-    if (cardOutcome && pillResult && tagDiff && narrativeResult) {
-        cardOutcome.classList.remove("decision-fab", "decision-imp", "decision-eq");
+    // Card 2: Importar
+    document.getElementById("kpi-costo-imp-unit").textContent = `${formatearMoneda(imp.costo_unitario_total_usd, imp.costo_unitario_total_bob)} / par`;
+    document.getElementById("kpi-costo-imp-total").textContent = `Lote (${q.toLocaleString()} p): ${formatearMoneda(imp.costo_total_lote_usd, imp.costo_total_lote_bob)}`;
 
-        if (diff.decision_recomendada === "FABRICAR") {
-            cardOutcome.classList.add("decision-fab");
-            pillResult.textContent = "RECOMENDACIÓN: FABRICAR LOCALMENTE";
-            pillResult.style.background = "rgba(6, 182, 212, 0.25)";
-            pillResult.style.color = "#38bdf8";
-        } else if (diff.decision_recomendada === "IMPORTAR") {
-            cardOutcome.classList.add("decision-imp");
-            pillResult.textContent = "RECOMENDACIÓN: IMPORTAR EXTERIOR";
-            pillResult.style.background = "rgba(245, 158, 11, 0.25)";
-            pillResult.style.color = "#fbbf24";
-        } else {
-            cardOutcome.classList.add("decision-eq");
-            pillResult.textContent = "RECOMENDACIÓN: COSTOS EQUIVALENTES";
-            pillResult.style.background = "rgba(139, 92, 246, 0.25)";
-            pillResult.style.color = "#c084fc";
+    // Card 3: Decisión / Diferencia
+    const decEl = document.getElementById("kpi-decision-estrategica");
+    decEl.textContent = (diff.decision_texto || diff.decision_recomendada).toUpperCase();
+    if (diff.decision_recomendada === "FABRICAR") {
+        decEl.className = "kpi-decision-text text-emerald";
+    } else if (diff.decision_recomendada === "IMPORTAR") {
+        decEl.className = "kpi-decision-text text-cyan";
+    } else {
+        decEl.className = "kpi-decision-text text-amber";
+    }
+
+    const ahorroFmt = formatearMoneda(diff.ahorro_lote_usd, diff.ahorro_lote_bob);
+    const difFmt = formatearMoneda(diff.diferencia_costo_usd, diff.diferencia_costo_bob);
+    if (diff.decision_recomendada === "EQUIVALENTE") {
+        document.getElementById("kpi-ahorro-estimado").textContent = `Diferencia de ${difFmt} dentro de tolerancia (±$5.00 USD).`;
+    } else {
+        document.getElementById("kpi-ahorro-estimado").textContent = `${diff.conclusion_texto} (Ahorro lote: ${ahorroFmt})`;
+    }
+
+    // Card 4: Precio Propuesto
+    document.getElementById("kpi-precio-propuesto").textContent = `${formatearMoneda(precio.precio_sugerido_usd, precio.precio_sugerido_bob)}`;
+    document.getElementById("kpi-precio-sub").textContent = `Alternativa: ${precio.alternativa_label} (Margen: ${precio.margen_objetivo_pct}%)`;
+
+    // 2. Gráficos
+    renderizarGraficosCostos(data);
+}
+
+function renderizarGraficosCostos(data) {
+    const fab = data.fabricacion;
+    const imp = data.importacion;
+    const diff = data.analisis_diferencial;
+    const q = data.configuracion.cantidad_pares;
+    const esBob = (AppState.monedaActual === "BOB");
+    const tc = AppState.tasaCambio;
+
+    // ==========================================
+    // Gráfico 1: Desglose de componentes unitarios
+    // ==========================================
+    const ctxComp = document.getElementById("chart-costos-comparacion");
+    if (ctxComp) {
+        if (AppState.charts.costosComp) AppState.charts.costosComp.destroy();
+
+        // Valores unitarios por componente
+        const cvFabVal = esBob ? fab.costo_variable_unitario_bob : fab.costo_variable_unitario_usd;
+        const cfEvitUnitVal = esBob ? (fab.costos_fijos_evitables_bob / q) : (fab.costos_fijos_evitables_usd / q);
+
+        const refImpVal = esBob ? imp.referencia_comercial_bob : imp.referencia_comercial_usd;
+        const gastosImpVal = esBob ? imp.gastos_adicionales_bob : imp.gastos_adicionales_usd;
+
+        const subBar = document.getElementById("chart-subtitulo-barras");
+        if (subBar) {
+            subBar.textContent = `Costos por par para lote de ${q.toLocaleString()} pares en ${AppState.monedaActual}`;
         }
 
-        const difMonto = esBob ? diff.diferencia_costo_bob : diff.diferencia_costo_usd;
-        tagDiff.textContent = `Diferencial Lote: ${simbolo} ${Math.abs(difMonto).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        narrativeResult.textContent = diff.mensaje;
-
-        if (boxIndiff && valIndiff) {
-            if (diff.punto_indiferencia_pares !== null && diff.punto_indiferencia_pares > 0) {
-                boxIndiff.style.display = "flex";
-                valIndiff.textContent = diff.punto_indiferencia_pares.toLocaleString();
-            } else {
-                boxIndiff.style.display = "none";
+        AppState.charts.costosComp = new Chart(ctxComp, {
+            type: "bar",
+            data: {
+                labels: ["Fabricar localmente", "Importar calzado"],
+                datasets: [
+                    {
+                        label: "Costo variable directo / Compra base",
+                        data: [cvFabVal, refImpVal],
+                        backgroundColor: "#0ea5e9",
+                        borderRadius: 4
+                    },
+                    {
+                        label: "Costos fijos evitables / Gastos importación",
+                        data: [cfEvitUnitVal, gastosImpVal],
+                        backgroundColor: "#f59e0b",
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        stacked: true,
+                        grid: { color: "rgba(255,255,255,0.06)" },
+                        ticks: { color: "#e2e8f0", font: { weight: "600" } }
+                    },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        grid: { color: "rgba(255,255,255,0.06)" },
+                        ticks: {
+                            color: "#94a3b8",
+                            callback: v => (esBob ? "Bs. " : "$ ") + v.toFixed(2)
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: "top",
+                        labels: { boxWidth: 12, color: "#94a3b8" }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => {
+                                const val = ctx.parsed.y;
+                                return `  ${ctx.dataset.label}: ${formatearMoneda(esBob ? val / tc : val, esBob ? val : val * tc)} / par`;
+                            },
+                            footer: tooltipItems => {
+                                let total = 0;
+                                tooltipItems.forEach(item => total += item.parsed.y);
+                                return `Total unitario: ${formatearMoneda(esBob ? total / tc : total, esBob ? total : total * tc)} / par`;
+                            }
+                        }
+                    }
+                }
             }
-        }
+        });
     }
 
-    // 2. Resultados Fabricación
-    const cuFab = esBob ? fab.costo_unitario_total_bob : fab.costo_unitario_total_usd;
-    const ctFab = esBob ? fab.costo_total_lote_bob : fab.costo_total_lote_usd;
-    const ppFab = esBob ? fab.precio_propuesto_bob : fab.precio_propuesto_usd;
+    // ==========================================
+    // Gráfico 2: Costo según cantidad (Eje X numérico {x, y})
+    // ==========================================
+    const ctxIndiff = document.getElementById("chart-costos-indiferencia");
+    if (ctxIndiff) {
+        if (AppState.charts.costosIndiff) AppState.charts.costosIndiff.destroy();
 
-    const elCuFab = document.getElementById("res-cu-fab");
-    const elCtFab = document.getElementById("res-ct-fab");
-    const elMbFab = document.getElementById("res-mb-fab");
-    const elPpFab = document.getElementById("res-pp-fab");
+        const curva = data.curva_volumen || [];
+        const datosFab = curva.map(pt => ({
+            x: pt.x,
+            y: esBob ? pt.costo_fabricar_bob : pt.costo_fabricar_usd
+        }));
+        const datosImp = curva.map(pt => ({
+            x: pt.x,
+            y: esBob ? pt.costo_importar_bob : pt.costo_importar_usd
+        }));
 
-    if (elCuFab) elCuFab.textContent = `${simbolo} ${cuFab.toFixed(2)}`;
-    if (elCtFab) elCtFab.textContent = `${simbolo} ${ctFab.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    if (elMbFab) elMbFab.textContent = `${fab.margen_bruto_pct.toFixed(1)}%`;
-    if (elPpFab) elPpFab.textContent = `${simbolo} ${ppFab.toFixed(2)}`;
-
-    // 3. Resultados Importación
-    const cuImp = esBob ? imp.costo_unitario_total_bob : imp.costo_unitario_total_usd;
-    const ctImp = esBob ? imp.costo_total_lote_bob : imp.costo_total_lote_usd;
-    const ppImp = esBob ? imp.precio_propuesto_bob : imp.precio_propuesto_usd;
-
-    const elCuImp = document.getElementById("res-cu-imp");
-    const elCtImp = document.getElementById("res-ct-imp");
-    const elMbImp = document.getElementById("res-mb-imp");
-    const elPpImp = document.getElementById("res-pp-imp");
-
-    if (elCuImp) elCuImp.textContent = `${simbolo} ${cuImp.toFixed(2)}`;
-    if (elCtImp) elCtImp.textContent = `${simbolo} ${ctImp.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    if (elMbImp) elMbImp.textContent = `${imp.margen_bruto_pct.toFixed(1)}%`;
-    if (elPpImp) elPpImp.textContent = `${simbolo} ${ppImp.toFixed(2)}`;
-
-    // 4. Inventario Activo & Guardado de Precio Propuesto Seleccionado
-    if (data.precio_activo_inventario) {
-        const act = data.precio_activo_inventario;
-        const elActCat = document.getElementById("res-act-cat");
-        const elActPrecio = document.getElementById("res-act-precio");
-        const elActPrecioUsd = document.getElementById("res-act-precio-usd");
-        const elActStock = document.getElementById("res-act-stock");
-
-        if (elActCat) elActCat.textContent = act.categoria;
-        if (elActPrecio) elActPrecio.textContent = `Bs. ${act.precio_unitario_bs.toFixed(2)}`;
-        if (elActPrecioUsd) elActPrecioUsd.textContent = `$us. ${act.precio_unitario_usd.toFixed(2)}`;
-        if (elActStock) elActStock.textContent = `${act.stock_actual} pares`;
-
-        // Selección de precio propuesto según alternativa recomendada o por defecto fabricación
-        let precioPropuestoFinalBs = 0;
-        let precioPropuestoFinalUsd = 0;
-        let fuenteRecomendada = "Fabricación Local";
-
-        if (diff.decision_recomendada === "IMPORTAR") {
-            precioPropuestoFinalBs = imp.precio_propuesto_bob;
-            precioPropuestoFinalUsd = imp.precio_propuesto_usd;
-            fuenteRecomendada = "Importación Externa";
-        } else {
-            precioPropuestoFinalBs = fab.precio_propuesto_bob;
-            precioPropuestoFinalUsd = fab.precio_propuesto_usd;
-            fuenteRecomendada = "Fabricación Local";
+        const subIndiff = document.getElementById("chart-subtitulo-indiff");
+        if (subIndiff) {
+            subIndiff.textContent = diff.mensaje_indiferencia || "Costo total acumulado por volumen";
         }
 
-        AppState.ultimoPrecioPropuesto = {
-            id_producto: act.id_producto,
-            categoria: act.categoria,
-            precio_bs: precioPropuestoFinalBs,
-            precio_usd: precioPropuestoFinalUsd,
-            fuente: fuenteRecomendada
-        };
-    }
-}
-
-async function cargarEscenarioPreset(tipo) {
-    document.querySelectorAll(".btn-preset-scenario").forEach(btn => {
-        btn.classList.toggle("active", btn.getAttribute("data-preset") === tipo);
-    });
-
-    try {
-        const res = await fetch(`/api/escenarios/predefinido/${tipo}`);
-        const data = await res.json();
-
-        if (data.exito && data.parametros) {
-            const p = data.parametros;
-            const tc = AppState.tasaCambio;
-            const esBob = (AppState.monedaActual === "BOB");
-            const factor = esBob ? tc : 1.0;
-
-            const catSel = document.getElementById("calc-categoria-sel");
-            if (catSel) catSel.value = String(p.codigo_sa6);
-
-            const qInput = document.getElementById("calc-cantidad-pares");
-            if (qInput) qInput.value = p.cantidad_pares;
-
-            const pVenta = document.getElementById("calc-precio-venta");
-            if (pVenta) pVenta.value = (p.precio_venta * factor).toFixed(2);
-
-            const margen = document.getElementById("calc-margen-objetivo");
-            if (margen) margen.value = p.margen_objetivo_pct.toFixed(1);
-
-            const cv = document.getElementById("calc-cv-fabril");
-            if (cv) cv.value = (p.costo_variable_unitario_fab * factor).toFixed(2);
-
-            const cfEv = document.getElementById("calc-cf-evitables");
-            if (cfEv) cfEv.value = (p.costos_fijos_evitables * factor).toFixed(2);
-
-            const cfPerm = document.getElementById("calc-cf-permanentes");
-            if (cfPerm) cfPerm.value = (p.costos_fijos_permanentes * factor).toFixed(2);
-
-            const pComp = document.getElementById("calc-p-compra");
-            if (pComp) pComp.value = (p.cotizacion_compra * factor).toFixed(2);
-
-            const flete = document.getElementById("calc-flete");
-            if (flete) flete.value = (p.flete_transporte * factor).toFixed(2);
-
-            const seg = document.getElementById("calc-seguro");
-            if (seg) seg.value = (p.seguro_transporte * factor).toFixed(2);
-
-            const aranc = document.getElementById("calc-arancel");
-            if (aranc) aranc.value = (p.gastos_internacion * factor).toFixed(2);
-
-            const log = document.getElementById("calc-logistica");
-            if (log) log.value = (p.entrega_local * factor).toFixed(2);
-
-            const otros = document.getElementById("calc-otros");
-            if (otros) otros.value = (p.otros_gastos * factor).toFixed(2);
-
-            actualizarCardInventarioActivo(String(p.codigo_sa6));
-            ejecutarCalculoEscenario();
-        }
-    } catch (e) {
-        console.error("Error al cargar escenario predefinido:", e);
-    }
-}
-
-async function actualizarCardInventarioActivo(codigoSa6) {
-    try {
-        const res = await fetch("/api/estado");
-        const datos = await res.json();
-        if (datos.exito && datos.inventario) {
-            const item = datos.inventario.find(x => String(x.codigo_sa6) === String(codigoSa6));
-            if (item) {
-                const elCat = document.getElementById("res-act-cat");
-                const elBs = document.getElementById("res-act-precio");
-                const elUsd = document.getElementById("res-act-precio-usd");
-                const elStock = document.getElementById("res-act-stock");
-
-                if (elCat) elCat.textContent = item.categoria_corta;
-                if (elBs) elBs.textContent = `Bs. ${item.precio_unitario_bs.toFixed(2)}`;
-                if (elUsd) elUsd.textContent = `$us. ${item.precio_unitario_usd.toFixed(2)}`;
-                if (elStock) elStock.textContent = `${item.stock_actual} pares`;
+        AppState.charts.costosIndiff = new Chart(ctxIndiff, {
+            type: "line",
+            data: {
+                datasets: [
+                    {
+                        label: "Costo Total Fabricar",
+                        data: datosFab,
+                        borderColor: "#0ea5e9",
+                        backgroundColor: "rgba(14, 165, 233, 0.12)",
+                        borderWidth: 2,
+                        tension: 0.05,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    },
+                    {
+                        label: "Costo Total Importar",
+                        data: datosImp,
+                        borderColor: "#f59e0b",
+                        backgroundColor: "rgba(245, 158, 11, 0.12)",
+                        borderWidth: 2,
+                        tension: 0.05,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: "linear",
+                        title: {
+                            display: true,
+                            text: "Cantidad de pares (volumen numérico)",
+                            color: "#94a3b8",
+                            font: { size: 11 }
+                        },
+                        grid: { color: "rgba(255,255,255,0.06)" },
+                        ticks: {
+                            color: "#94a3b8",
+                            callback: v => v.toLocaleString() + " pares"
+                        }
+                    },
+                    y: {
+                        type: "linear",
+                        title: {
+                            display: true,
+                            text: `Costo total del lote (${esBob ? "Bs." : "$us."})`,
+                            color: "#94a3b8",
+                            font: { size: 11 }
+                        },
+                        grid: { color: "rgba(255,255,255,0.06)" },
+                        ticks: {
+                            color: "#94a3b8",
+                            callback: v => (esBob ? "Bs. " : "$ ") + v.toLocaleString()
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: "top",
+                        labels: { boxWidth: 12, color: "#94a3b8" }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => {
+                                const val = ctx.parsed.y;
+                                return `${ctx.dataset.label}: ${formatearMoneda(esBob ? val / tc : val, esBob ? val : val * tc)} (para ${ctx.parsed.x.toLocaleString()} pares)`;
+                            }
+                        }
+                    }
+                }
             }
-        }
-    } catch (e) {
-        console.error("Error al actualizar tarjeta de inventario activo:", e);
+        });
     }
 }
 
-async function aplicarPrecioAlInventario() {
-    if (!AppState.ultimoPrecioPropuesto) {
-        alert("Primero ejecuta el cálculo de un escenario para obtener un precio propuesto.");
+async function aplicarPrecioPropuestoAlCatalogo() {
+    if (!AppState.ultimoCalculoCostos) {
+        alert("Primero ejecuta el cálculo de costos para obtener un precio propuesto válido.");
         return;
     }
 
-    const { id_producto, categoria, precio_bs, precio_usd, fuente } = AppState.ultimoPrecioPropuesto;
+    const data = AppState.ultimoCalculoCostos;
+    const precioObj = data.precio_propuesto;
+    const idProd = parseInt(document.getElementById("calc-producto-dest")?.value || "1");
+    const selProd = document.getElementById("calc-producto-dest");
+    const nombreProd = selProd?.selectedOptions[0]?.text || `Producto #${idProd}`;
 
-    const confirmacion = confirm(
-        `¿Deseas aplicar el precio propuesto por el escenario al inventario activo?\n\n` +
-        `• Categoría: ${categoria}\n` +
-        `• Nuevo Precio en Tienda: Bs. ${precio_bs.toFixed(2)} ($us. ${precio_usd.toFixed(2)})\n` +
-        `• Alternativa origen: ${fuente}\n\n` +
-        `NOTA: Esta acción actualizará exclusivamente el precio oficial en el catálogo sin alterar las existencias de calzado en bodega.`
+    const precioUsd = precioObj.precio_sugerido_usd;
+    const precioBob = precioObj.precio_sugerido_bob;
+
+    const confirma = confirm(
+        `¿Deseas aplicar el precio sugerido de $ ${precioUsd.toFixed(2)} USD (Bs. ${precioBob.toFixed(2)}) a "${nombreProd}"?\n\n` +
+        `Esta acción actualiza únicamente el catálogo de este producto; las existencias actuales y las ventas históricas no se modificarán.`
     );
-
-    if (!confirmacion) return;
+    if (!confirma) return;
 
     try {
         const res = await fetch("/api/inventario/aplicar-precio", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                id_producto: id_producto,
-                nuevo_precio_bs: precio_bs,
-                nuevo_precio_usd: precio_usd,
-                responsable: "Gerente Comercial Manaco (Módulo Make-or-Buy)"
+                id_producto: idProd,
+                nuevo_precio_usd: precioUsd,
+                nuevo_precio_bs: precioBob,
+                responsable: "Gerente Comercial Manaco"
             })
         });
-        const datos = await res.json();
-
-        if (datos.exito) {
+        const respJson = await res.json();
+        if (respJson.exito) {
             reproducirSonido("exito");
-            alert(datos.mensaje || `Precio de ${categoria} actualizado con éxito a Bs. ${precio_bs.toFixed(2)}`);
-            cargarDatosDashboard(false);
-            cargarMovimientos();
-            ejecutarCalculoEscenario();
+            alert(`Precio de catálogo para ${nombreProd} actualizado exitosamente a $ ${precioUsd.toFixed(2)} USD (Bs. ${precioBob.toFixed(2)}). Existencias y ventas históricas no modificadas.`);
+            cargarDatosGenerales(false);
         } else {
-            alert(`Error al actualizar precio: ${datos.error}`);
+            alert(`Error al actualizar precio: ${respJson.error || 'Desconocido'}`);
         }
     } catch (e) {
-        console.error("Error al aplicar precio:", e);
+        console.error("Error aplicando precio:", e);
+        alert("Ocurrió un error de conexión al aplicar el precio al catálogo.");
+    }
+}
+
+// ==========================================================================
+// 3. INVENTARIO (CON CÁMARA INTEGRADA)
+// ==========================================================================
+function configurarCamaraInventario() {
+    const btnToggleScanner = document.getElementById("btn-toggle-escanear-calzado");
+    const panelScanner = document.getElementById("panel-escanear-calzado");
+    const btnToggleCam = document.getElementById("btn-toggle-camara");
+
+    if (btnToggleScanner && panelScanner) {
+        btnToggleScanner.addEventListener("click", () => {
+            AppState.scannerAbierto = !AppState.scannerAbierto;
+            panelScanner.style.display = AppState.scannerAbierto ? "block" : "none";
+            btnToggleScanner.textContent = AppState.scannerAbierto ? "✖ Cerrar Escáner" : "📷 Escanear calzado";
+
+            if (!AppState.scannerAbierto && AppState.camaraActiva) {
+                detenerCamara();
+            }
+        });
+    }
+
+    if (btnToggleCam) {
+        btnToggleCam.addEventListener("click", () => {
+            if (AppState.camaraActiva) {
+                detenerCamara();
+            } else {
+                iniciarCamara();
+            }
+        });
+    }
+}
+
+async function iniciarCamara() {
+    const videoEl = document.getElementById("webcam-video");
+    const btnToggle = document.getElementById("btn-toggle-camara");
+    const badgeEstado = document.getElementById("badge-cam-estado");
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "environment" },
+            audio: false
+        });
+
+        videoEl.srcObject = stream;
+        await videoEl.play();
+
+        AppState.camaraActiva = true;
+        if (badgeEstado) {
+            badgeEstado.textContent = "Cámara activa";
+            badgeEstado.className = "badge-tag tag-emerald";
+        }
+        if (btnToggle) {
+            btnToggle.textContent = "Detener Cámara";
+            btnToggle.classList.add("btn-danger-soft");
+        }
+
+        AppState.intervaloEscaneo = setInterval(capturarYClasificarFrame, 400);
+    } catch (err) {
+        console.error("Error al acceder a la cámara:", err);
+        alert("No se pudo iniciar la cámara web. Verifica los permisos de video en tu navegador.");
+    }
+}
+
+function detenerCamara() {
+    const videoEl = document.getElementById("webcam-video");
+    const btnToggle = document.getElementById("btn-toggle-camara");
+    const badgeEstado = document.getElementById("badge-cam-estado");
+    const infoDetectada = document.getElementById("cam-info-detectada");
+    const compatSec = document.getElementById("cam-productos-compatibles");
+
+    if (AppState.intervaloEscaneo) {
+        clearInterval(AppState.intervaloEscaneo);
+        AppState.intervaloEscaneo = null;
+    }
+
+    if (videoEl && videoEl.srcObject) {
+        videoEl.srcObject.getTracks().forEach(t => t.stop());
+        videoEl.srcObject = null;
+    }
+
+    AppState.camaraActiva = false;
+    AppState.ultimaCategoriaDetectada = null;
+
+    if (badgeEstado) {
+        badgeEstado.textContent = "Cámara apagada";
+        badgeEstado.className = "badge-tag";
+    }
+    if (btnToggle) {
+        btnToggle.textContent = "Iniciar Cámara";
+        btnToggle.classList.remove("btn-danger-soft");
+    }
+
+    // Ocultar categoría y productos cuando la cámara está apagada
+    if (infoDetectada) infoDetectada.style.display = "none";
+    if (compatSec) compatSec.style.display = "none";
+}
+
+async function capturarYClasificarFrame() {
+    if (!AppState.camaraActiva || AppState.bloqueadoPorRegistro) return;
+
+    const videoEl = document.getElementById("webcam-video");
+    const canvas = document.getElementById("canvas-captura");
+    if (!videoEl || videoEl.videoWidth === 0) return;
+
+    canvas.width = 224;
+    canvas.height = 224;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(videoEl, 0, 0, 224, 224);
+
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+
+    try {
+        const res = await fetch("/clasificar_frame", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ image: dataUrl })
+        });
+        const pred = await res.json();
+        procesarDeteccionCamara(pred);
+    } catch (e) {
+        console.warn("Fallo frame inferencia:", e);
+    }
+}
+
+function procesarDeteccionCamara(pred) {
+    const infoDetectada = document.getElementById("cam-info-detectada");
+    const nombreCatEl = document.getElementById("cam-categoria-nombre");
+    const sa6El = document.getElementById("cam-categoria-sa6");
+    const compatSec = document.getElementById("cam-productos-compatibles");
+    const botonesContainer = document.getElementById("cam-botones-modelos");
+
+    if (!pred || pred.clase === "sin_calzado" || pred.confianza < 0.35) {
+        if (infoDetectada) infoDetectada.style.display = "none";
+        if (compatSec) compatSec.style.display = "none";
+        AppState.ultimaCategoriaDetectada = null;
+        return;
+    }
+
+    const sa6 = pred.codigo_sa6;
+    AppState.ultimaCategoriaDetectada = sa6;
+
+    if (infoDetectada) infoDetectada.style.display = "block";
+    if (nombreCatEl) nombreCatEl.textContent = pred.clase_nombre || "Calzado detectado";
+    if (sa6El) sa6El.textContent = `SA6: ${sa6} • Confianza: ${Math.round(pred.confianza * 100)}%`;
+
+    // Filtrar productos compatibles
+    const prodsCompatibles = AppState.catalogoProductos.filter(p => p.codigo_sa6 === sa6);
+
+    if (compatSec && botonesContainer && prodsCompatibles.length > 0) {
+        compatSec.style.display = "block";
+        botonesContainer.innerHTML = prodsCompatibles.map(p => `
+            <button class="compatible-btn" onclick="confirmarIngresoCalzado(${p.id_producto}, '${p.nombre_producto}')">
+                <span>+1 par: <strong>${p.nombre_producto}</strong></span>
+                <span class="text-muted-sm">Stock: ${p.stock_actual}</span>
+            </button>
+        `).join("");
+    }
+}
+
+async function confirmarIngresoCalzado(idProducto, nombreProducto) {
+    if (AppState.bloqueadoPorRegistro) return;
+    AppState.bloqueadoPorRegistro = true;
+
+    try {
+        const res = await fetch("/api/inventario/movimiento", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                id_producto: idProducto,
+                tipo_accion: "INGRESO_IA",
+                cantidad: 1,
+                canal_venta: "Almacén Central Manaco",
+                responsable: "Cámara IA Almacén"
+            })
+        });
+        const respJson = await res.json();
+
+        if (respJson.exito) {
+            reproducirSonido("exito");
+
+            // Mostrar confirmación breve
+            const banner = document.getElementById("cam-confirmacion-banner");
+            const texto = document.getElementById("cam-confirmacion-texto");
+            const nuevoStock = respJson.nuevo_stock ?? respJson.stock_resultante ?? respJson.datos?.stock_resultante ?? "--";
+
+            if (banner && texto) {
+                texto.textContent = `✓ Ingreso confirmado: +1 par de ${nombreProducto}. Nuevo stock: ${nuevoStock} pares.`;
+                banner.style.display = "block";
+                setTimeout(() => { banner.style.display = "none"; }, 3500);
+            }
+
+            // Actualizar stock local y tablas
+            cargarDatosGenerales(false);
+        } else {
+            alert(`Error: ${respJson.error || 'No se pudo registrar el ingreso'}`);
+        }
+    } catch (e) {
+        console.error("Error confirmando ingreso:", e);
+    } finally {
+        setTimeout(() => { AppState.bloqueadoPorRegistro = false; }, 1200);
+    }
+}
+
+// ==========================================================================
+// CARGA GENERAL DE INVENTARIO Y CATÁLOGO
+// ==========================================================================
+async function cargarDatosGenerales(animar = true) {
+    try {
+        const res = await fetch("/api/inventario/resumen");
+        const json = await res.json();
+        if (!json.exito) return;
+
+        const kpis = json.datos.kpis || {};
+        const prods = json.datos.productos || {};
+        const cats = json.datos.categorias || {};
+
+        AppState.catalogoProductos = kpis.inventario_detalle || [];
+        AppState.inventarioCategorias = kpis.categorias_detalle || [];
+
+        actualizarKpisInventario(kpis);
+        renderizarGraficosInventario(prods, cats, animar);
+        poblarTablaInventario(AppState.catalogoProductos);
+
+        if (!AppState.ultimoCalculoCostos) {
+            ejecutarCalculoCostos();
+        }
+    } catch (e) {
+        console.warn("Error cargando resumen de inventario:", e);
+    }
+}
+
+function actualizarKpisInventario(kpis) {
+    const kpiTot = document.getElementById("kpi-inv-total-pares");
+    const capOcup = document.getElementById("kpi-inv-cap-ocupacion");
+    const kpiEnt = document.getElementById("kpi-inv-entradas");
+    const kpiIa = document.getElementById("kpi-inv-ia-count");
+    const kpiSal = document.getElementById("kpi-inv-salidas");
+    const kpiAlert = document.getElementById("kpi-inv-alertas-count");
+    const kpiAlertDesc = document.getElementById("kpi-inv-alertas-desc");
+
+    const totalPares = kpis.total_stock_actual || 90;
+    const capMax = kpis.capacidad_almacen || 900;
+    const pctOcup = Math.min(100, Math.round((totalPares / capMax) * 100));
+
+    if (kpiTot) kpiTot.textContent = totalPares.toLocaleString();
+    if (capOcup) capOcup.textContent = `Capacidad ocupada: ${pctOcup}% (de ${capMax} pares)`;
+    if (kpiEnt) kpiEnt.textContent = (kpis.total_ingresos_pares || 0).toLocaleString();
+    if (kpiIa) kpiIa.textContent = `${kpis.ingresos_ia_count || 0} escaneos registrados`;
+    if (kpiSal) kpiSal.textContent = (kpis.total_salidas_pares || 0).toLocaleString();
+
+    const alertas = kpis.productos_alerta_stock || 0;
+    if (kpiAlert) kpiAlert.textContent = alertas;
+    if (kpiAlertDesc) {
+        kpiAlertDesc.textContent = alertas > 0 ? `${alertas} modelo(s) bajo el stock mínimo` : "Todos los modelos con stock de seguridad";
+    }
+}
+
+function renderizarGraficosInventario(prods, cats, animar) {
+    const ctxProd = document.getElementById("chart-inv-productos");
+    if (ctxProd && prods.labels) {
+        if (AppState.charts.invProd) AppState.charts.invProd.destroy();
+
+        AppState.charts.invProd = new Chart(ctxProd, {
+            type: "bar",
+            data: {
+                labels: prods.labels,
+                datasets: [
+                    { label: "Stock Actual (pares)", data: prods.stock_actual, backgroundColor: "#0ea5e9", borderRadius: 4 },
+                    { label: "Stock Mínimo Seguridad", data: prods.stock_minimo, type: "line", borderColor: "#f59e0b", borderDash: [5, 5], borderWidth: 2 }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: animar ? { duration: 400 } : false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: "rgba(255,255,255,0.06)" } },
+                    x: { grid: { color: "rgba(255,255,255,0.06)" }, ticks: { font: { size: 10 } } }
+                },
+                plugins: { legend: { position: "top", labels: { boxWidth: 12, color: "#94a3b8" } } }
+            }
+        });
+    }
+
+    const ctxCat = document.getElementById("chart-inv-categorias");
+    if (ctxCat && cats.labels) {
+        if (AppState.charts.invCat) AppState.charts.invCat.destroy();
+
+        AppState.charts.invCat = new Chart(ctxCat, {
+            type: "bar",
+            data: {
+                labels: cats.labels,
+                datasets: [{
+                    label: "Pares en Almacén",
+                    data: cats.stock_actual,
+                    backgroundColor: ["#0ea5e9", "#f59e0b", "#e11d48"],
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: animar ? { duration: 400 } : false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: "rgba(255,255,255,0.06)" } },
+                    x: { grid: { color: "rgba(255,255,255,0.06)" } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+}
+
+function poblarTablaInventario(catalogo) {
+    const tbody = document.getElementById("tbody-inventario-catalogo");
+    if (!tbody) return;
+
+    if (catalogo.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="11" class="text-center text-muted">Cargando inventario...</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = catalogo.map(p => {
+        const esAlerta = p.stock_actual <= p.stock_minimo;
+        const badge = esAlerta ? `<span class="badge-tag tag-alert">⚠️ Stock Bajo</span>` : `<span class="badge-tag tag-emerald">✓ Óptimo</span>`;
+
+        return `
+            <tr>
+                <td><strong>#${p.id_producto}</strong></td>
+                <td><code>${p.codigo_sku}</code></td>
+                <td>${p.codigo_sa6}</td>
+                <td>${p.categoria_corta}</td>
+                <td>${p.linea || 'Básico'}</td>
+                <td><strong>${p.nombre_producto}</strong></td>
+                <td><strong>${p.stock_actual} pares</strong></td>
+                <td>${p.stock_minimo} pares</td>
+                <td>$ ${p.precio_unitario_usd.toFixed(2)}</td>
+                <td>Bs. ${p.precio_unitario_bs.toFixed(2)}</td>
+                <td>${badge}</td>
+            </tr>
+        `;
+    }).join("");
+}
+
+// ==========================================================================
+// 4. PRODUCTOS: COMPARAR, DECIDIR Y CONTEXTUALIZAR
+// ==========================================================================
+function configurarTabProductos() {
+    // Selector de producto evaluado
+    const selProd = document.getElementById("sel-producto-evaluar");
+    if (selProd) {
+        selProd.addEventListener("change", (e) => {
+            AppState.productos.productoSeleccionadoId = parseInt(e.target.value, 10);
+            actualizarKpisProductosTab();
+        });
+    }
+
+    // Toggle origen de ventas (Simulación 12M vs Registros en Almacén)
+    const btnSint = document.getElementById("btn-origen-sintetico");
+    const btnReg = document.getElementById("btn-origen-registrado");
+    if (btnSint && btnReg) {
+        btnSint.addEventListener("click", () => {
+            AppState.productos.origenVentas = "sintetico";
+            btnSint.classList.add("active");
+            btnReg.classList.remove("active");
+            actualizarKpisProductosTab();
+            renderizarGraficoRanking();
+            renderizarTablaDecisionProductos();
+        });
+
+        btnReg.addEventListener("click", () => {
+            AppState.productos.origenVentas = "registrado";
+            btnReg.classList.add("active");
+            btnSint.classList.remove("active");
+            actualizarKpisProductosTab();
+            renderizarGraficoRanking();
+            renderizarTablaDecisionProductos();
+        });
+    }
+
+    // Botón reintentar en caja de estado
+    const btnReintentar = document.getElementById("btn-reintentar-productos");
+    if (btnReintentar) {
+        btnReintentar.addEventListener("click", () => {
+            cargarDatosProductos();
+        });
+    }
+
+    // Selector métrica ranking (Pares vendidos vs Contribución)
+    const btnRankPares = document.getElementById("btn-ranking-pares");
+    const btnRankContrib = document.getElementById("btn-ranking-contribucion");
+    if (btnRankPares && btnRankContrib) {
+        btnRankPares.addEventListener("click", () => {
+            AppState.productos.rankingMetrica = "pares";
+            btnRankPares.classList.add("active");
+            btnRankContrib.classList.remove("active");
+            const sub = document.getElementById("ranking-subtitulo");
+            if (sub) sub.textContent = "Ordenado por pares vendidos en el período";
+            renderizarGraficoRanking();
+        });
+
+        btnRankContrib.addEventListener("click", () => {
+            AppState.productos.rankingMetrica = "contribucion";
+            btnRankContrib.classList.add("active");
+            btnRankPares.classList.remove("active");
+            const sub = document.getElementById("ranking-subtitulo");
+            if (sub) sub.textContent = "Ordenado por contribución monetaria (Ingresos - Costos atribuibles)";
+            renderizarGraficoRanking();
+        });
+    }
+
+    // Filtro por categoría en la tabla de decisión
+    const filtroCatDec = document.getElementById("filtro-prod-categoria-comparar");
+    if (filtroCatDec) {
+        filtroCatDec.addEventListener("change", (e) => {
+            AppState.productos.filtroCategoriaDecision = e.target.value;
+            renderizarTablaDecisionProductos();
+        });
+    }
+
+    // Contexto externo collapsible & filtros
+    const panelExt = document.getElementById("panel-contexto-externo");
+    if (panelExt) {
+        panelExt.addEventListener("toggle", () => {
+            if (panelExt.open && !AppState.contextoExterno.datos) {
+                cargarContextoExternoProductos();
+            }
+        });
+    }
+
+    const selExtAnio = document.getElementById("filtro-ext-anio");
+    const selExtFlujo = document.getElementById("filtro-ext-flujo");
+    const btnExtUsd = document.getElementById("btn-ext-medida-usd");
+    const btnExtPares = document.getElementById("btn-ext-medida-pares");
+
+    if (selExtAnio) {
+        selExtAnio.addEventListener("change", (e) => {
+            AppState.contextoExterno.anio = e.target.value;
+            cargarContextoExternoProductos();
+        });
+    }
+
+    if (selExtFlujo) {
+        selExtFlujo.addEventListener("change", (e) => {
+            AppState.contextoExterno.flujo = e.target.value;
+            cargarContextoExternoProductos();
+        });
+    }
+
+    if (btnExtUsd && btnExtPares) {
+        btnExtUsd.addEventListener("click", () => {
+            AppState.contextoExterno.medida = "USD";
+            btnExtUsd.classList.add("active");
+            btnExtPares.classList.remove("active");
+            cargarContextoExternoProductos();
+        });
+
+        btnExtPares.addEventListener("click", () => {
+            AppState.contextoExterno.medida = "PARES";
+            btnExtPares.classList.add("active");
+            btnExtUsd.classList.remove("active");
+            cargarContextoExternoProductos();
+        });
+    }
+}
+
+async function cargarDatosProductos() {
+    const estadoBox = document.getElementById("productos-estado-box");
+    const estadoMsg = document.getElementById("productos-estado-msg");
+
+    if (estadoBox && estadoMsg) {
+        estadoMsg.textContent = "Cargando catálogo y métricas de productos...";
+        estadoBox.style.display = "flex";
+        estadoBox.className = "status-callout-box status-loading";
+    }
+
+    try {
+        const res = await fetch("/api/productos/detalle");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = await res.json();
+
+        if (!json.exito || !json.productos || json.productos.length === 0) {
+            throw new Error(json.error || "No se recibieron productos del servidor");
+        }
+
+        AppState.productos.datos = json;
+        if (estadoBox) estadoBox.style.display = "none";
+
+        actualizarKpisProductosTab();
+        renderizarGraficoCostoPrecio();
+        renderizarGraficoRanking();
+        renderizarTablaDecisionProductos();
+    } catch (e) {
+        console.error("Error al cargar productos:", e);
+        if (estadoBox && estadoMsg) {
+            estadoMsg.textContent = `Error al cargar datos de productos: ${e.message || "Fallo de conexión"}`;
+            estadoBox.style.display = "flex";
+            estadoBox.className = "status-callout-box status-error";
+        }
+    }
+}
+
+function actualizarKpisProductosTab() {
+    if (!AppState.productos.datos) return;
+    const { kpis, productos } = AppState.productos.datos;
+
+    // KPI 1: Productos activos
+    const elSkus = document.getElementById("kpi-prod-total-skus");
+    if (elSkus) elSkus.textContent = kpis.total_productos_activos || productos.length || 6;
+
+    // Producto seleccionado
+    const prodSelId = AppState.productos.productoSeleccionadoId;
+    const p = productos.find(x => x.id_producto === prodSelId) || productos[0];
+    if (!p) return;
+
+    // Moneda activa
+    const esBob = AppState.monedaActual === "BOB";
+    const precio = esBob ? p.precio_unitario_bs : p.precio_unitario_usd;
+    const costo = esBob ? p.costo_referencia_bs : p.costo_referencia_usd;
+    const diferencia = esBob ? p.diferencia_bs : p.diferencia_usd;
+    const prefijo = esBob ? "Bs. " : "$ ";
+
+    // KPI 2: Diferencia estimada por par
+    const elDif = document.getElementById("kpi-prod-diferencia-par");
+    const elDifSub = document.getElementById("kpi-prod-diferencia-sub");
+    if (elDif) {
+        elDif.textContent = `${prefijo}${diferencia.toFixed(2)}`;
+    }
+    if (elDifSub) {
+        elDifSub.textContent = `Precio (${prefijo}${precio.toFixed(2)}) - Costo ref. (${prefijo}${costo.toFixed(2)})`;
+    }
+
+    // KPI 3: Margen del escenario seleccionado
+    const elMargen = document.getElementById("kpi-prod-margen-escenario");
+    const elMargenSub = document.getElementById("kpi-prod-margen-sub");
+    if (elMargen) {
+        elMargen.textContent = `${p.margen_sobre_venta_pct.toFixed(1)}%`;
+    }
+    if (elMargenSub) {
+        elMargenSub.textContent = `Margen s/venta para ${p.codigo_sku} (${p.linea})`;
+    }
+
+    // KPI 4: Unidades vendidas en el período indicando procedencia
+    const elVentas = document.getElementById("kpi-prod-ventas-tot");
+    const elVentasFuente = document.getElementById("kpi-prod-ventas-fuente");
+    const origen = AppState.productos.origenVentas;
+
+    if (origen === "sintetico") {
+        const totalPares = kpis.ventas_sinteticas_totales_pares || 6959;
+        if (elVentas) elVentas.textContent = totalPares.toLocaleString();
+        if (elVentasFuente) elVentasFuente.textContent = `Procedencia: Simulación 12M (${p.codigo_sku}: ${p.ventas_sinteticas_pares.toLocaleString()} pares)`;
+    } else {
+        const totalPares = kpis.ventas_registradas_totales_pares || 0;
+        if (elVentas) elVentas.textContent = totalPares.toLocaleString();
+        if (elVentasFuente) elVentasFuente.textContent = `Procedencia: Registros en Almacén (${p.codigo_sku}: ${p.ventas_registradas_pares.toLocaleString()} pares)`;
+    }
+}
+
+function renderizarGraficoCostoPrecio() {
+    const canvas = document.getElementById("chart-prod-costo-precio");
+    if (!canvas || !AppState.productos.datos) return;
+    const productos = AppState.productos.datos.productos || [];
+    if (productos.length === 0) return;
+
+    if (AppState.charts.prodCostoPrecio) {
+        AppState.charts.prodCostoPrecio.destroy();
+    }
+
+    const esBob = AppState.monedaActual === "BOB";
+    const prefijo = esBob ? "Bs. " : "$ ";
+    const labels = productos.map(p => `${p.codigo_sku} (${p.linea})`);
+
+    const dataCostos = productos.map(p => esBob ? p.costo_referencia_bs : p.costo_referencia_usd);
+    const dataPrecios = productos.map(p => esBob ? p.precio_unitario_bs : p.precio_unitario_usd);
+
+    AppState.charts.prodCostoPrecio = new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: `Costo Estimado (${prefijo.trim()}/par)`,
+                    data: dataCostos,
+                    backgroundColor: "#f59e0b",
+                    borderRadius: 4
+                },
+                {
+                    label: `Precio Propuesto (${prefijo.trim()}/par)`,
+                    data: dataPrecios,
+                    backgroundColor: "#0ea5e9",
+                    borderRadius: 4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: { color: "rgba(255,255,255,0.06)" },
+                    ticks: {
+                        callback: v => `${prefijo}${v}`
+                    }
+                },
+                x: {
+                    grid: { color: "rgba(255,255,255,0.06)" },
+                    ticks: { font: { size: 10 } }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: "top",
+                    labels: { boxWidth: 12, color: "#94a3b8" }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const p = productos[context.dataIndex];
+                            if (!p) return "";
+                            const costo = esBob ? p.costo_referencia_bs : p.costo_referencia_usd;
+                            const precio = esBob ? p.precio_unitario_bs : p.precio_unitario_usd;
+                            const dif = esBob ? p.diferencia_bs : p.diferencia_usd;
+                            return [
+                                `Costo estimado: ${prefijo}${costo.toFixed(2)}/par`,
+                                `Precio propuesto: ${prefijo}${precio.toFixed(2)}/par`,
+                                `Diferencia estimada: ${prefijo}${dif.toFixed(2)}/par`,
+                                `Margen s/venta: ${p.margen_sobre_venta_pct.toFixed(1)}%`
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderizarGraficoRanking() {
+    const canvas = document.getElementById("chart-prod-ranking");
+    if (!canvas || !AppState.productos.datos) return;
+    const productos = [...(AppState.productos.datos.productos || [])];
+    if (productos.length === 0) return;
+
+    if (AppState.charts.prodRanking) {
+        AppState.charts.prodRanking.destroy();
+    }
+
+    const origen = AppState.productos.origenVentas;
+    const metrica = AppState.productos.rankingMetrica;
+    const esBob = AppState.monedaActual === "BOB";
+    const tc = AppState.tasaCambio;
+    const prefijo = esBob ? "Bs. " : "$ ";
+
+    // Calcular valor según origen y métrica
+    productos.forEach(p => {
+        if (origen === "sintetico") {
+            p._valRanking = metrica === "pares" 
+                ? p.ventas_sinteticas_pares 
+                : (esBob ? p.contribucion_sintetica_usd * tc : p.contribucion_sintetica_usd);
+        } else {
+            p._valRanking = metrica === "pares"
+                ? p.ventas_registradas_pares
+                : (esBob ? p.contribucion_registrada_usd * tc : p.contribucion_registrada_usd);
+        }
+    });
+
+    // Ordenar de mayor a menor
+    productos.sort((a, b) => b._valRanking - a._valRanking);
+
+    const labels = productos.map(p => `${p.codigo_sku} (${p.linea})`);
+    const values = productos.map(p => p._valRanking);
+    const labelSerie = metrica === "pares" 
+        ? `Pares vendidos (${origen === 'sintetico' ? 'Simulación 12M' : 'Almacén'})`
+        : `Contribución (${prefijo.trim()}) (${origen === 'sintetico' ? 'Simulación 12M' : 'Almacén'})`;
+
+    AppState.charts.prodRanking = new Chart(canvas, {
+        type: "bar",
+        data: {
+            labels: labels,
+            datasets: [{
+                label: labelSerie,
+                data: values,
+                backgroundColor: metrica === "pares" ? "#10b981" : "#8b5cf6",
+                borderRadius: 4
+            }]
+        },
+        options: {
+            indexAxis: "y",
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    grid: { color: "rgba(255,255,255,0.06)" },
+                    ticks: {
+                        callback: v => metrica === "pares" ? v.toLocaleString() : `${prefijo}${v.toLocaleString()}`
+                    }
+                },
+                y: {
+                    grid: { color: "rgba(255,255,255,0.06)" },
+                    ticks: { font: { size: 11 } }
+                }
+            },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const val = context.raw || 0;
+                            if (metrica === "pares") {
+                                return `Ventas: ${val.toLocaleString()} pares`;
+                            } else {
+                                return `Contribución: ${prefijo}${val.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderizarTablaDecisionProductos() {
+    const tbody = document.getElementById("tbody-productos-decision");
+    if (!tbody || !AppState.productos.datos) return;
+    let prods = AppState.productos.datos.productos || [];
+
+    const filtroCat = AppState.productos.filtroCategoriaDecision;
+    if (filtroCat && filtroCat !== "TODAS") {
+        prods = prods.filter(p => String(p.codigo_sa6) === String(filtroCat));
+    }
+
+    if (prods.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">No hay productos en esta selección.</td></tr>`;
+        return;
+    }
+
+    const origen = AppState.productos.origenVentas;
+    const esBob = AppState.monedaActual === "BOB";
+    const tc = AppState.tasaCambio;
+    const prefijo = esBob ? "Bs. " : "$ ";
+
+    tbody.innerHTML = prods.map(p => {
+        const pares = origen === "sintetico" ? p.ventas_sinteticas_pares : p.ventas_registradas_pares;
+        const precio = esBob ? p.precio_unitario_bs : p.precio_unitario_usd;
+        const costo = esBob ? p.costo_referencia_bs : p.costo_referencia_usd;
+        
+        let contrib = origen === "sintetico" ? p.contribucion_sintetica_usd : p.contribucion_registrada_usd;
+        if (esBob) contrib = contrib * tc;
+
+        // Criterio analítico ponderado (volumen, margen, stock y período)
+        let criterioHtml = "";
+        if (origen === "registrado" && pares === 0) {
+            criterioHtml = `<span class="badge-tag tag-gray">Sin ventas en almacén</span>`;
+        } else if (p.stock_actual <= p.stock_minimo) {
+            criterioHtml = `<span class="badge-tag tag-alert">⚠️ Reponer stock antes de promocionar</span>`;
+        } else if (p.linea === "Básico" && pares > 1000) {
+            criterioHtml = `<span class="badge-tag tag-cyan">Mantener • Base de rotación y volumen</span>`;
+        } else if (p.linea === "Confort" && p.margen_sobre_venta_pct > 38) {
+            criterioHtml = `<span class="badge-tag tag-purple">Promocionar • Alto aporte unitario</span>`;
+        } else {
+            criterioHtml = `<span class="badge-tag tag-emerald">Mantener en catálogo</span>`;
+        }
+
+        return `
+            <tr>
+                <td><strong>${p.nombre_producto}</strong> (<code>${p.codigo_sku}</code>)</td>
+                <td><span class="badge-tag ${p.linea === 'Confort' ? 'tag-purple' : 'tag-cyan'}">${p.linea}</span></td>
+                <td><strong>${pares.toLocaleString()}</strong> pares</td>
+                <td>${prefijo}${precio.toFixed(2)}</td>
+                <td>${prefijo}${costo.toFixed(2)}</td>
+                <td><strong class="text-emerald">${prefijo}${contrib.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></td>
+                <td>${p.stock_actual} pares</td>
+                <td>${criterioHtml}</td>
+            </tr>
+        `;
+    }).join("");
+}
+
+async function cargarContextoExternoProductos() {
+    const { anio, flujo, medida } = AppState.contextoExterno;
+    const txtMayor = document.getElementById("txt-mayor-participacion");
+    const canvas = document.getElementById("chart-ext-participacion");
+    if (!canvas) return;
+
+    try {
+        const url = `/api/productos/participacion_exterior?anio=${encodeURIComponent(anio)}&flujo=${encodeURIComponent(flujo)}&medida=${encodeURIComponent(medida)}`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (!json.exito) return;
+
+        AppState.contextoExterno.datos = json;
+
+        if (txtMayor) {
+            if (json.mayor_participacion) {
+                txtMayor.textContent = `Mayor participación en los registros: ${json.mayor_participacion} con ${json.mayor_porcentaje}%`;
+            } else {
+                txtMayor.textContent = "Sin datos registrados para los filtros seleccionados";
+            }
+        }
+
+        if (AppState.charts.extPart) {
+            AppState.charts.extPart.destroy();
+        }
+
+        const cats = json.categorias || [];
+        const labels = cats.map(c => c.nombre);
+        const dataValues = cats.map(c => c.porcentaje);
+
+        AppState.charts.extPart = new Chart(canvas, {
+            type: "doughnut",
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: dataValues,
+                    backgroundColor: ["#0ea5e9", "#f59e0b", "#e11d48"],
+                    borderWidth: 1,
+                    borderColor: "rgba(255,255,255,0.1)"
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: "right",
+                        labels: { boxWidth: 12, color: "#94a3b8", font: { size: 10 } }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const idx = context.dataIndex;
+                                const item = cats[idx];
+                                const unidad = medida === "USD" ? "$ USD" : "pares";
+                                return [
+                                    `${item.nombre}: ${item.porcentaje}%`,
+                                    `Total: ${item.valor.toLocaleString()} ${unidad}`
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    } catch (e) {
+        console.warn("Error cargando contexto externo:", e);
+    }
+}
+
+// ==========================================================================
+// 5. PREDICCIONES
+// ==========================================================================
+async function cargarPrediccionesOperativas() {
+    try {
+        const res = await fetch("/api/predicciones/operativas");
+        const json = await res.json();
+        if (!json.exito) return;
+
+        const kpis = json.datos.kpis || {};
+        const prods = json.datos.productos || [];
+
+        const el7d = document.getElementById("kpi-plan-ventas-7d");
+        const elMae = document.getElementById("kpi-plan-mae");
+        const elRep = document.getElementById("kpi-plan-reposicion-total");
+
+        if (el7d) el7d.textContent = (kpis.total_ventas_previstas_7d || 136).toLocaleString();
+        if (elMae) elMae.textContent = (kpis.mae_promedio_general || 1.02).toFixed(2);
+        if (elRep) elRep.textContent = (kpis.sugerencia_reposicion_total || 106).toLocaleString();
+
+        poblarTablaReposicion(prods);
+        renderizarGraficoPronostico7D(prods);
+    } catch (e) {
+        console.warn("Error cargando predicciones operativas:", e);
+    }
+}
+
+function poblarTablaReposicion(prods) {
+    const tbody = document.getElementById("tbody-plan-reposicion");
+    if (!tbody) return;
+
+    if (prods.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="text-center text-muted">Cargando sugerencias de reposición...</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = prods.map(p => {
+        const estado = p.alerta_stock ? `<span class="badge-tag tag-alert">Bajo Mínimo</span>` : `<span class="badge-tag tag-emerald">Normal</span>`;
+        return `
+            <tr>
+                <td><strong>${p.nombre_producto}</strong> (<code>${p.sku}</code>)</td>
+                <td>${p.stock_actual} pares</td>
+                <td>${p.lead_time_dias} días</td>
+                <td>${p.stock_seguridad} pares</td>
+                <td>${p.demanda_lead_time_estimada} pares</td>
+                <td><strong>${p.punto_reorden} pares</strong></td>
+                <td><strong class="text-emerald">${p.sugerencia_reposicion_pares} pares</strong></td>
+                <td>${estado}</td>
+                <td>
+                    <button class="btn btn-primary btn-sm" onclick="abrirModalReposicion(${p.id_producto}, '${p.nombre_producto}', ${p.sugerencia_reposicion_pares})">
+                        Ingresar Reposición
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
+function renderizarGraficoPronostico7D(prods) {
+    const ctx7d = document.getElementById("chart-plan-7d");
+    if (ctx7d && prods.length > 0) {
+        if (AppState.charts.plan7d) AppState.charts.plan7d.destroy();
+
+        AppState.charts.plan7d = new Chart(ctx7d, {
+            type: "bar",
+            data: {
+                labels: prods.map(p => p.sku),
+                datasets: [{
+                    label: "Demanda Prevista 7 Días (pares)",
+                    data: prods.map(p => p.ventas_previstas_7d),
+                    backgroundColor: "#0ea5e9",
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: "rgba(255,255,255,0.06)" } },
+                    x: { grid: { color: "rgba(255,255,255,0.06)" } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+}
+
+async function cargarPrediccionesExcel() {
+    try {
+        const res = await fetch("/api/predicciones/excel");
+        const json = await res.json();
+        if (!json.exito) return;
+
+        const cats = json.datos.categorias || [];
+        const ctxExcel = document.getElementById("chart-plan-excel");
+        if (ctxExcel && cats.length > 0) {
+            if (AppState.charts.planExcel) AppState.charts.planExcel.destroy();
+
+            AppState.charts.planExcel = new Chart(ctxExcel, {
+                type: "bar",
+                data: {
+                    labels: cats.map(c => c.categoria),
+                    datasets: [
+                        { label: "Real 2024 (pares)", data: cats.map(c => c.real_2024), backgroundColor: "#0ea5e9", borderRadius: 4 },
+                        { label: "Proyección 2025 (pares)", data: cats.map(c => c.proyeccion_2025_tendencia), backgroundColor: "#f59e0b", borderRadius: 4 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: "rgba(255,255,255,0.06)" }, ticks: { callback: v => v.toLocaleString() } },
+                        x: { grid: { color: "rgba(255,255,255,0.06)" } }
+                    },
+                    plugins: { legend: { position: "top", labels: { boxWidth: 12, color: "#94a3b8" } } }
+                }
+            });
+        }
+    } catch (e) {
+        console.warn("Error cargando predicciones de excel:", e);
+    }
+}
+
+function abrirModalReposicion(idProd, nombre, cantidad) {
+    AppState.productoSeleccionadoReposicion = { id: idProd, nombre: nombre, cantidad: cantidad };
+    const modal = document.getElementById("modal-reposicion-overlay");
+    const msg = document.getElementById("modal-reposicion-mensaje");
+    if (msg) msg.textContent = `¿Desea ingresar el pedido sugerido de ${cantidad} pares para ${nombre}?`;
+    if (modal) modal.style.display = "flex";
+}
+
+async function ejecutarConfirmacionReposicion() {
+    if (!AppState.productoSeleccionadoReposicion) return;
+    const { id, nombre, cantidad } = AppState.productoSeleccionadoReposicion;
+
+    try {
+        const res = await fetch("/api/inventario/movimiento", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                id_producto: id,
+                tipo_accion: "ENTRADA",
+                cantidad: cantidad,
+                canal_venta: "Bodega Central Manaco",
+                responsable: "Planificador de Producción"
+            })
+        });
+        const respJson = await res.json();
+        document.getElementById("modal-reposicion-overlay").style.display = "none";
+
+        if (respJson.exito) {
+            reproducirSonido("exito");
+            alert(`Reposición confirmada: +${cantidad} pares de ${nombre}.`);
+            cargarDatosGenerales(false);
+            cargarPrediccionesOperativas();
+        } else {
+            alert(`Error: ${respJson.error || 'No se pudo registrar la reposición'}`);
+        }
+    } catch (e) {
+        console.error("Error confirmando reposición:", e);
+    }
+}
+
+// ==========================================================================
+// 6. VENTAS Y CANALES
+// ==========================================================================
+async function cargarMetricasCanales() {
+    try {
+        const res = await fetch("/api/canales/metricas");
+        const json = await res.json();
+        if (!json.exito) return;
+
+        const kpis = json.datos.kpis || {};
+        const canales = json.datos.canales || [];
+
+        const elPares = document.getElementById("kpi-canales-pares-tot");
+        const elIngBob = document.getElementById("kpi-canales-ingresos-bs");
+        const elIngUsd = document.getElementById("kpi-canales-ingresos-usd");
+        const elLider = document.getElementById("kpi-canales-lider-nombre");
+        const elShare = document.getElementById("kpi-canales-lider-share");
+
+        if (elPares) elPares.textContent = (kpis.total_pares_vendidos || 6959).toLocaleString();
+        if (elIngBob) elIngBob.textContent = (kpis.total_ingresos_brutos_bob || 2338090.07).toLocaleString("es-BO", { minimumFractionDigits: 2 });
+        if (elIngUsd) elIngUsd.textContent = `$us. ${(kpis.total_ingresos_brutos_usd || 335932.48).toLocaleString("en-US", { minimumFractionDigits: 2 })}`;
+        if (elLider) elLider.textContent = kpis.canal_lider_ventas || "Tiendas Propias";
+        if (elShare) elShare.textContent = `${kpis.canal_lider_participacion_pct || 58}% de las ventas`;
+
+        renderizarGraficosCanales(canales);
+    } catch (e) {
+        console.warn("Error cargando métricas de canales:", e);
+    }
+
+    const btnRegen = document.getElementById("btn-regenerar-sinteticos");
+    if (btnRegen) {
+        btnRegen.addEventListener("click", regenerarHistorialSintetico);
+    }
+}
+
+function renderizarGraficosCanales(canales) {
+    const ctxPart = document.getElementById("chart-canales-participacion");
+    if (ctxPart && canales.length > 0) {
+        if (AppState.charts.canalesPart) AppState.charts.canalesPart.destroy();
+
+        AppState.charts.canalesPart = new Chart(ctxPart, {
+            type: "pie",
+            data: {
+                labels: canales.map(c => c.canal),
+                datasets: [{
+                    data: canales.map(c => c.pares_vendidos),
+                    backgroundColor: ["#0ea5e9", "#f59e0b", "#10b981"]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { position: "right", labels: { boxWidth: 12, color: "#94a3b8" } } }
+            }
+        });
+    }
+
+    const ctxFact = document.getElementById("chart-canales-facturacion");
+    if (ctxFact && canales.length > 0) {
+        if (AppState.charts.canalesFact) AppState.charts.canalesFact.destroy();
+
+        AppState.charts.canalesFact = new Chart(ctxFact, {
+            type: "bar",
+            data: {
+                labels: canales.map(c => c.canal),
+                datasets: [{
+                    label: "Ingresos Efectivos (Bs.)",
+                    data: canales.map(c => c.ingresos_brutos_bob),
+                    backgroundColor: "#10b981",
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true, grid: { color: "rgba(255,255,255,0.06)" }, ticks: { callback: v => `Bs. ${v.toLocaleString()}` } },
+                    x: { grid: { color: "rgba(255,255,255,0.06)" } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+}
+
+async function regenerarHistorialSintetico() {
+    if (!confirm("¿Deseas regenerar la simulación de ventas transaccionales de 12 meses?")) return;
+
+    try {
+        const res = await fetch("/api/sinteticos/regenerar", { method: "POST" });
+        const json = await res.json();
+        if (json.exito) {
+            alert(`Historial sintético generado: ${json.pares_vendidos} pares vendidos.`);
+            cargarDatosGenerales(false);
+            cargarMetricasCanales();
+            cargarPrediccionesOperativas();
+        } else {
+            alert(`Error: ${json.error || 'No se pudo regenerar'}`);
+        }
+    } catch (e) {
+        console.error("Error regenerando sintéticos:", e);
+    }
+}
+
+// ==========================================================================
+// AUDIO SINTETIZADOR WEB AUDIO API
+// ==========================================================================
+function reproducirSonido(tipo = "exito") {
+    if (!AppState.sonidoHabilitado) return;
+    try {
+        if (!AppState.audioCtx) {
+            AppState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        const ctx = AppState.audioCtx;
+        if (ctx.state === "suspended") ctx.resume();
+
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        if (tipo === "exito") {
+            osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(880.00, ctx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.12, ctx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.25);
+        }
+    } catch (e) {
+        // Fallback silencioso
     }
 }

@@ -3,912 +3,1075 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MANACO BI & Vision AI - Control de Inventario y Analítica de Calzados</title>
-    <meta name="description" content="Plataforma integral de Business Intelligence y Reconocimiento de Calzados con Visión Artificial para Fábrica de Calzados Manaco.">
-    <!-- Google Fonts -->
+    <title>MANACO BI — Caso de Inteligencia de Negocios</title>
+    <meta name="description" content="Sistema de inteligencia de negocios orientado a los cinco problemas del caso MANACO: costos, inventario, diferenciación, demanda y canales digitales.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- Chart.js CDN -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <!-- Estilos CSS -->
     <link rel="stylesheet" href="/static/app.css">
+    <style>
+        /* ===== ESTILOS ESPECÍFICOS DE LA ESTRUCTURA DE PROBLEMAS ===== */
+        .problem-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: var(--manaco-crimson);
+            background: rgba(225,29,72,0.10);
+            border: 1px solid rgba(225,29,72,0.25);
+            border-radius: 20px;
+            padding: 3px 10px;
+            margin-bottom: 6px;
+        }
+        .problem-statement {
+            font-size: 13px;
+            color: var(--text-secondary);
+            max-width: 680px;
+            margin-top: 4px;
+            line-height: 1.5;
+        }
+        .solution-block {
+            background: rgba(16,185,129,0.06);
+            border: 1px solid rgba(16,185,129,0.22);
+            border-radius: var(--radius-md);
+            padding: 16px 20px;
+            margin-top: 16px;
+        }
+        .solution-block-title {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.6px;
+            text-transform: uppercase;
+            color: var(--emerald-accent);
+            margin-bottom: 6px;
+        }
+        .solution-block p {
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+        .solution-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 14px;
+        }
+        .data-source-note {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 6px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .data-source-note .source-tag {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-sm);
+            padding: 2px 8px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        .no-data-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: var(--text-muted);
+            font-size: 13px;
+            border: 1px dashed var(--border-glass);
+            border-radius: var(--radius-md);
+            gap: 8px;
+        }
+        .no-data-placeholder .no-data-icon { font-size: 32px; opacity: 0.4; }
+        .nav-number {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 2px;
+            display: block;
+        }
+        .nav-tab-btn { flex-direction: column; align-items: flex-start; padding: 10px 14px; }
+        .nav-tab-btn .nav-icon { font-size: 16px; }
+        .nav-tab-btn .nav-label { font-size: 12px; line-height: 1.3; }
+        .nav-tab-btn.is-resumen { flex-direction: row; align-items: center; }
+        .nav-tab-btn.is-resumen .nav-label { font-size: 13px; }
+        .nav-divider {
+            height: 1px;
+            background: var(--border-glass);
+            margin: 8px 0;
+        }
+        .nav-section-label {
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            padding: 4px 14px 2px;
+        }
+        .kpi-grid-3col {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        @media (max-width: 900px) {
+            .kpi-grid-3col { grid-template-columns: repeat(2,1fr); }
+        }
+    </style>
 </head>
 <body>
-    <!-- Fondo decorativo con luces dinámicas -->
-    <div class="ambient-glow glow-1"></div>
-    <div class="ambient-glow glow-2"></div>
-    <div class="ambient-glow glow-3"></div>
+<div class="app-container">
 
-    <div class="app-layout">
-        <!-- BARRA SUPERIOR / HEADER -->
-        <header class="app-header">
-            <div class="header-brand">
-                <div class="brand-logo">
-                    <span class="logo-icon">👞</span>
-                </div>
-                <div class="brand-info">
-                    <h1 class="brand-title">MANACO <span class="highlight">BI & VISION</span></h1>
-                    <p class="brand-subtitle">Control de Inventario Inteligente • 3 Categorías de Calzado</p>
-                </div>
+    <!-- ============================================================== -->
+    <!-- BARRA LATERAL — 5 Problemas + Resumen                          -->
+    <!-- ============================================================== -->
+    <aside class="app-sidebar">
+        <div class="sidebar-brand">
+            <div class="brand-logo">👞</div>
+            <div class="brand-info">
+                <h1 class="brand-title">MANACO <span class="highlight">BI</span></h1>
+                <p class="brand-subtitle">Caso de Negocios</p>
             </div>
+        </div>
 
-            <div class="header-meta">
-                <div class="badge-status" id="db-status-badge">
-                    <span class="status-dot pulse"></span>
-                    <span id="db-status-text">POSTGRESQL INVENTARIO</span>
-                </div>
-                <div class="badge-status" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3);">
-                    <span class="status-dot green"></span>
-                    <span>EXCEL COMERCIAL (240 Regs)</span>
-                </div>
-                <div class="badge-time" id="live-clock">
-                    --:--:--
-                </div>
-                <button class="btn btn-secondary btn-icon" id="btn-toggle-sound" title="Alternar Sonido">
-                    <span id="sound-icon">🔔</span>
-                </button>
-                <button class="btn btn-primary" id="btn-quick-simulate">
-                    <span>🎲</span> Simular 20 Datos
-                </button>
-            </div>
-        </header>
+        <nav class="sidebar-nav">
+            <button class="nav-tab-btn is-resumen active" data-tab="tab-resumen" id="btn-nav-resumen">
+                <span class="nav-icon">📊</span>
+                <span class="nav-label">Resumen general</span>
+            </button>
 
-        <!-- NAVEGACIÓN POR PESTAÑAS -->
-        <nav class="app-tabs">
-            <button class="tab-btn active" data-tab="tab-dashboard" id="tab-btn-dashboard">
-                <span class="tab-icon">📊</span>
-                <span class="tab-label">Dashboard BI Gerencial</span>
+            <div class="nav-divider"></div>
+            <div class="nav-section-label">Cinco Problemas</div>
+
+            <button class="nav-tab-btn" data-tab="tab-costos" id="btn-nav-costos">
+                <span class="nav-number">P-1</span>
+                <span class="nav-icon">💰</span>
+                <span class="nav-label">Costos y márgenes</span>
             </button>
-            <button class="tab-btn" data-tab="tab-scanner" id="tab-btn-scanner">
-                <span class="tab-icon">📷</span>
-                <span class="tab-label">Escáner IA de Calzado</span>
-                <span class="badge-pill">En Vivo</span>
+            <button class="nav-tab-btn" data-tab="tab-inventario" id="btn-nav-inventario">
+                <span class="nav-number">P-2</span>
+                <span class="nav-icon">📦</span>
+                <span class="nav-label">Control de inventario</span>
             </button>
-            <button class="tab-btn" data-tab="tab-make-or-buy" id="tab-btn-make-or-buy">
-                <span class="tab-icon">⚖️</span>
-                <span class="tab-label">Fabricar o Importar</span>
-                <span class="badge-pill" style="background: rgba(14, 165, 233, 0.2); color: #38bdf8;">Escenarios</span>
+            <button class="nav-tab-btn" data-tab="tab-productos" id="btn-nav-productos">
+                <span class="nav-number">P-3</span>
+                <span class="nav-icon">👟</span>
+                <span class="nav-label">Diferenciación de productos</span>
             </button>
-            <button class="tab-btn" data-tab="tab-movimientos" id="tab-btn-movimientos">
-                <span class="tab-icon">📋</span>
-                <span class="tab-label">Movimientos & Auditoría</span>
+            <button class="nav-tab-btn" data-tab="tab-predicciones" id="btn-nav-predicciones">
+                <span class="nav-number">P-4</span>
+                <span class="nav-icon">📈</span>
+                <span class="nav-label">Planificación de demanda</span>
             </button>
-            <button class="tab-btn" data-tab="tab-simulador" id="tab-btn-simulador">
-                <span class="tab-icon">⚙️</span>
-                <span class="tab-label">Simulador Operativo</span>
+            <button class="nav-tab-btn" data-tab="tab-ventas" id="btn-nav-ventas">
+                <span class="nav-number">P-5</span>
+                <span class="nav-icon">🏬</span>
+                <span class="nav-label">Ventas y canales digitales</span>
             </button>
         </nav>
 
-        <!-- CONTENIDO PRINCIPAL -->
-        <main class="app-content">
+        <div class="sidebar-footer">
+            <button class="btn btn-secondary btn-sm btn-full" id="btn-abrir-config-modal">
+                ⚙️ Configuración
+            </button>
+            <div class="currency-quick-toggle">
+                <span class="text-muted-sm">Moneda:</span>
+                <div class="btn-group-toggle">
+                    <button class="btn btn-tab-sm active" id="btn-currency-usd" data-currency="USD">$us</button>
+                    <button class="btn btn-tab-sm" id="btn-currency-bob" data-currency="BOB">Bs.</button>
+                </div>
+            </div>
+        </div>
+    </aside>
 
-            <!-- ============================================================== -->
-            <!-- PESTAÑA 1: DASHBOARD BI GERENCIAL -->
-            <!-- ============================================================== -->
-            <section class="tab-pane active" id="tab-dashboard">
-                <!-- Tarjetas de KPIs -->
-                <div class="kpi-grid">
-                    <div class="kpi-card glass-panel" id="kpi-total-pares">
-                        <div class="kpi-header">
-                            <span class="kpi-label">STOCK TOTAL EN ALMACÉN</span>
-                            <span class="kpi-icon kpi-cyan">📦</span>
+    <!-- ============================================================== -->
+    <!-- CONTENIDO PRINCIPAL                                            -->
+    <!-- ============================================================== -->
+    <main class="app-main">
+
+        <!-- ========================================================== -->
+        <!-- RESUMEN GENERAL                                             -->
+        <!-- ========================================================== -->
+        <section class="tab-pane active" id="tab-resumen">
+            <div class="pane-header">
+                <div>
+                    <h2 class="pane-title">Resumen general</h2>
+                    <p class="pane-desc">Comercio exterior de calzados de España con sus socios, 2020–2024. Importaciones, exportaciones y distribución por categoría.</p>
+                </div>
+                <div class="resumen-fuente-nota">
+                    <span>Fuente: BDatos_MANACO.xlsx — comercio exterior España 2020–2024.</span>
+                    <button class="btn-link" id="btn-ver-metodologia">Ver metodología</button>
+                </div>
+            </div>
+
+            <!-- Filtros -->
+            <div class="filters-card">
+                <div class="filters-grid">
+                    <div class="filter-group">
+                        <label for="filtro-resumen-anio">Año</label>
+                        <select id="filtro-resumen-anio" class="input-select">
+                            <option value="TODOS">Todos</option>
+                            <option value="2020">2020</option>
+                            <option value="2021">2021</option>
+                            <option value="2022">2022</option>
+                            <option value="2023">2023</option>
+                            <option value="2024">2024</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filtro-resumen-socio">País socio</label>
+                        <select id="filtro-resumen-socio" class="input-select">
+                            <option value="TODOS">Todos</option>
+                        </select>
+                        <small class="field-hint">Socio comercial (España es el reportante)</small>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filtro-resumen-categoria">Categoría</label>
+                        <select id="filtro-resumen-categoria" class="input-select">
+                            <option value="TODOS">Todos</option>
+                            <option value="640411">Calzado deportivo (640411)</option>
+                            <option value="640399">Calzado casual cuero (640399)</option>
+                            <option value="640420">Calzado formal vestir (640420)</option>
+                        </select>
+                    </div>
+                    <div class="filter-group filter-actions-col">
+                        <button class="btn btn-secondary" id="btn-limpiar-filtros-resumen">Limpiar filtros</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- KPIs -->
+            <div class="kpi-grid-3col" style="margin-top:16px;">
+                <div class="kpi-card" id="card-resumen-importado">
+                    <div class="kpi-header"><span class="kpi-label">VALOR IMPORTADO</span><span class="kpi-dot dot-blue"></span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="val-resumen-importado">--</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="sub-resumen-importado">Total acumulado de importaciones</span></div>
+                </div>
+                <div class="kpi-card" id="card-resumen-exportado">
+                    <div class="kpi-header"><span class="kpi-label">VALOR EXPORTADO</span><span class="kpi-dot dot-amber"></span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="val-resumen-exportado">--</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="sub-resumen-exportado">Total acumulado de exportaciones</span></div>
+                </div>
+                <div class="kpi-card" id="card-resumen-pares">
+                    <div class="kpi-header"><span class="kpi-label">PARES REGISTRADOS</span><span class="kpi-dot dot-emerald"></span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="val-resumen-pares">--</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="sub-resumen-pares">Suma de ambos flujos de la selección</span></div>
+                </div>
+            </div>
+
+            <!-- Selector de medida -->
+            <div class="chart-controls-bar" style="margin-top:14px;">
+                <span class="control-label">Medida para gráficos:</span>
+                <div class="btn-group-toggle">
+                    <button class="btn btn-tab-sm active" id="btn-medida-usd" data-medida="USD">Valor USD</button>
+                    <button class="btn btn-tab-sm" id="btn-medida-pares" data-medida="PARES">Cantidad de pares</button>
+                </div>
+            </div>
+
+            <!-- Gráficos de Resumen -->
+            <div class="resumen-charts-stack" style="margin-top:12px;">
+                <div class="chart-box">
+                    <div class="chart-header">
+                        <h4 class="chart-title" id="titulo-grafico-anios">Importaciones vs exportaciones por año</h4>
+                        <span class="chart-legend-text">Columnas agrupadas por flujo</span>
+                    </div>
+                    <div class="chart-container" style="height:270px;position:relative;">
+                        <canvas id="chart-resumen-anios"></canvas>
+                        <div class="empty-state-overlay" id="empty-anios" style="display:none;">Sin datos</div>
+                    </div>
+                </div>
+                <div class="charts-grid-2" style="margin-top:16px;">
+                    <div class="chart-box">
+                        <div class="chart-header">
+                            <h4 class="chart-title" id="titulo-grafico-socios">Principales socios comerciales</h4>
+                            <span class="chart-legend-text">Ranking por medida seleccionada</span>
                         </div>
-                        <div class="kpi-body">
-                            <span class="kpi-value" id="kpi-val-pares">0</span>
-                            <span class="kpi-unit">pares</span>
+                        <div class="chart-container" style="height:320px;position:relative;">
+                            <canvas id="chart-resumen-socios"></canvas>
+                            <div class="empty-state-overlay" id="empty-socios" style="display:none;">Sin datos</div>
                         </div>
-                        <div class="kpi-footer">
-                            <div class="progress-bar-bg">
-                                <div class="progress-bar-fill fill-cyan" id="kpi-bar-ocupacion" style="width: 0%"></div>
-                            </div>
-                            <span class="kpi-caption" id="kpi-cap-ocupacion">Capacidad ocupada: 0%</span>
+                    </div>
+                    <div class="chart-box">
+                        <div class="chart-header">
+                            <h4 class="chart-title" id="titulo-grafico-categorias">Distribución por categoría de calzado</h4>
+                            <span class="chart-legend-text">Por flujo y período seleccionado</span>
+                        </div>
+                        <div class="chart-container" style="height:320px;position:relative;">
+                            <canvas id="chart-resumen-categorias"></canvas>
+                            <div class="empty-state-overlay" id="empty-categorias" style="display:none;">Sin datos</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================================== -->
+        <!-- ========================================================== -->
+        <!-- P-1: COSTOS Y MÁRGENES (¿Fabricar o importar?)              -->
+        <!-- ========================================================== -->
+        <section class="tab-pane" id="tab-costos">
+            <div class="pane-header">
+                <div>
+                    <div class="problem-tag">1. Costos y márgenes</div>
+                    <h2 class="pane-title">¿Fabricar o importar?</h2>
+                    <p class="problem-statement">
+                        Compara alternativas y calcula un precio según tus costos y margen.
+                    </p>
+                    <div class="data-source-note" style="margin-top:4px;">
+                        <span class="source-tag">Simulación</span> Estimación con parámetros de simulación.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parámetros antes de los resultados, en dos columnas -->
+            <div class="card-box" style="margin-top:14px;">
+                <div class="card-box-header">
+                    <h3 class="card-box-title">Parámetros de comparación</h3>
+                    <span class="badge-tag" id="badge-estado-parametros">Listos para calcular</span>
+                </div>
+                <div class="form-grid-2" style="margin-top:12px;">
+                    <!-- Columna 1 -->
+                    <div class="form-column">
+                        <div class="form-group">
+                            <label for="calc-producto-dest">Producto del catálogo a fijar precio:</label>
+                            <select id="calc-producto-dest" class="input-select">
+                                <option value="1" data-sa6="640411" data-cv="16.50" data-gastos="4.00" data-margen="25">DEP-BAS — Deportivo Básico (640411)</option>
+                                <option value="2" data-sa6="640411" data-cv="18.00" data-gastos="6.00" data-margen="30">DEP-CNF — Deportivo Confort (640411)</option>
+                                <option value="3" data-sa6="640399" data-cv="15.00" data-gastos="4.00" data-margen="25">CAS-BAS — Casual Básico (640399)</option>
+                                <option value="4" data-sa6="640399" data-cv="17.50" data-gastos="6.00" data-margen="30">CAS-CNF — Casual Confort (640399)</option>
+                                <option value="5" data-sa6="640420" data-cv="24.00" data-gastos="5.00" data-margen="25">VES-BAS — Vestir Básico (640420)</option>
+                                <option value="6" data-sa6="640420" data-cv="28.00" data-gastos="7.00" data-margen="30">VES-CNF — Vestir Confort (640420)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="calc-categoria">Categoría SA6:</label>
+                            <select id="calc-categoria" class="input-select">
+                                <option value="640411">640411 — Calzado deportivo</option>
+                                <option value="640399">640399 — Calzado casual cuero</option>
+                                <option value="640420">640420 — Calzado formal vestir</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="calc-volumen-pares">Cantidad de pares:</label>
+                            <input type="number" id="calc-volumen-pares" class="input-text" value="3000" min="1" step="100">
+                        </div>
+                        <div class="form-group">
+                            <label for="calc-margen-objetivo">Margen objetivo (%):</label>
+                            <input type="number" id="calc-margen-objetivo" class="input-text" value="35" min="0" max="99.9" step="0.5">
+                        </div>
+                        <div class="form-group">
+                            <label for="calc-alternativa-precio">Alternativa para precio:</label>
+                            <select id="calc-alternativa-precio" class="input-select">
+                                <option value="recomendada">Recomendada (menor costo)</option>
+                                <option value="fabricar">Fabricar</option>
+                                <option value="importar">Importar</option>
+                            </select>
                         </div>
                     </div>
 
-                    <div class="kpi-card glass-panel" id="kpi-valor-almacen">
-                        <div class="kpi-header">
-                            <span class="kpi-label">VALORIZACIÓN ECONÓMICA</span>
-                            <span class="kpi-icon kpi-emerald">💰</span>
+                    <!-- Columna 2 -->
+                    <div class="form-column">
+                        <div class="form-group">
+                            <label for="calc-costo-var-fab">Costo de fabricación por par ($ USD):</label>
+                            <input type="number" id="calc-costo-var-fab" class="input-text" value="16.50" min="0" step="0.1">
                         </div>
-                        <div class="kpi-body">
-                            <span class="kpi-currency">Bs.</span>
-                            <span class="kpi-value" id="kpi-val-dinero-bs">0.00</span>
+                        <div class="form-group">
+                            <label for="calc-costo-fijo-evitable">Costos fijos evitables ($ USD):</label>
+                            <input type="number" id="calc-costo-fijo-evitable" class="input-text" value="12000" min="0" step="100">
                         </div>
-                        <div class="kpi-footer">
-                            <span class="kpi-subvalue" id="kpi-val-dinero-usd">$us. 0.00</span>
-                            <span class="kpi-badge-positive">T.C. 6.96</span>
+                        <div class="form-group">
+                            <label for="calc-gastos-importacion">Gastos de importación ($ USD/par):</label>
+                            <input type="number" id="calc-gastos-importacion" class="input-text" value="4.00" min="0" step="0.1">
                         </div>
-                    </div>
-
-                    <div class="kpi-card glass-panel" id="kpi-categoria-lider">
-                        <div class="kpi-header">
-                            <span class="kpi-label">CATEGORÍA LÍDER EN STOCK</span>
-                            <span class="kpi-icon kpi-amber">🏆</span>
+                        <div class="form-group">
+                            <label for="calc-ref-comercial">Referencia comercial por par ($ USD):</label>
+                            <input type="number" id="calc-ref-comercial" class="input-text" value="27.80" min="0" step="0.01">
                         </div>
-                        <div class="kpi-body">
-                            <span class="kpi-value-text" id="kpi-val-lider">Cargando...</span>
-                        </div>
-                        <div class="kpi-footer">
-                            <span class="kpi-caption" id="kpi-cap-lider-pares">0 pares disponibles</span>
-                            <span class="badge-tag tag-amber">Alta Demanda</span>
-                        </div>
-                    </div>
-
-                    <div class="kpi-card glass-panel" id="kpi-precision-ia">
-                        <div class="kpi-header">
-                            <span class="kpi-label">INGESTAS POR VISIÓN IA</span>
-                            <span class="kpi-icon kpi-crimson">⚡</span>
-                        </div>
-                        <div class="kpi-body">
-                            <span class="kpi-value" id="kpi-val-ingresos-ia">0</span>
-                            <span class="kpi-unit">detecciones</span>
-                        </div>
-                        <div class="kpi-footer">
-                            <span class="kpi-caption">Confianza prom:</span>
-                            <span class="badge-tag tag-emerald" id="kpi-val-confianza-prom">0%</span>
+                        <div class="form-group">
+                            <label for="calc-costo-fijo-permanente">Costos fijos permanentes ($ USD, común):</label>
+                            <input type="number" id="calc-costo-fijo-permanente" class="input-text" value="5000" min="0" step="100">
                         </div>
                     </div>
                 </div>
 
-                <!-- Tarjetas de Categorías Detalladas -->
-                <div class="categories-bar-grid" id="categories-summary-container">
-                    <!-- Se llena dinámicamente con JavaScript -->
+                <div class="form-actions-bar" style="margin-top:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+                    <button class="btn btn-primary" id="btn-ejecutar-calculo-costos">Calcular decisión y precio</button>
+                    <button class="btn btn-success" id="btn-aplicar-precio-catalogo" disabled>Aplicar precio al catálogo</button>
+                    <span class="text-muted-sm" id="calc-status-msg"></span>
                 </div>
+            </div>
 
-                <!-- Gráficos Analíticos -->
-                <div class="charts-grid">
-                    <!-- Gráfico 1: Stock Actual vs Mínimo -->
-                    <div class="chart-card glass-panel">
-                        <div class="chart-header">
-                            <div>
-                                <h3 class="chart-title">Niveles de Stock vs Margen de Seguridad</h3>
-                                <p class="chart-subtitle">Inventario disponible comparado con el umbral mínimo por categoría</p>
-                            </div>
-                            <button class="btn btn-outline-sm" id="btn-refresh-charts" title="Actualizar Datos">↻</button>
-                        </div>
-                        <div class="chart-container">
-                            <canvas id="chart-stock-niveles"></canvas>
-                        </div>
+            <!-- 4 Tarjetas de Resultados -->
+            <div class="kpi-grid" style="margin-top:16px;">
+                <div class="kpi-card" id="card-kpi-fab">
+                    <div class="kpi-header"><span class="kpi-label">COSTO DE FABRICAR POR PAR</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-costo-fab-unit">$ 0.00</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-costo-fab-total">Lote: $ 0.00</span></div>
+                </div>
+                <div class="kpi-card" id="card-kpi-imp">
+                    <div class="kpi-header"><span class="kpi-label">COSTO DE IMPORTAR POR PAR</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-costo-imp-unit">$ 0.00</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-costo-imp-total">Lote: $ 0.00</span></div>
+                </div>
+                <div class="kpi-card card-highlight" id="card-kpi-decision">
+                    <div class="kpi-header"><span class="kpi-label">DIFERENCIA DE COSTO DEL LOTE</span></div>
+                    <div class="kpi-body"><span class="kpi-decision-text" id="kpi-decision-estrategica">EVALUANDO...</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-ahorro-estimado">Diferencia = Fabricar − Importar</span></div>
+                </div>
+                <div class="kpi-card" id="card-kpi-precio">
+                    <div class="kpi-header"><span class="kpi-label">PRECIO PROPUESTO POR PAR</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-precio-propuesto">$ 0.00</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-precio-sub">Alternativa utilizada: --</span></div>
+                </div>
+            </div>
+
+            <!-- 2 Gráficos -->
+            <div class="charts-grid-2" style="margin-top:16px;">
+                <div class="chart-box">
+                    <div class="chart-header">
+                        <h4 class="chart-title">Desglose de costos unitarios por alternativa</h4>
+                        <span class="chart-legend-text" id="chart-subtitulo-barras">Comparación por par</span>
                     </div>
-
-                    <!-- Gráfico 2: Evolución Temporal de Movimientos -->
-                    <div class="chart-card glass-panel">
-                        <div class="chart-header">
-                            <div>
-                                <h3 class="chart-title">Flujo Temporal de Movimientos</h3>
-                                <p class="chart-subtitle">Ingresos por Visión Artificial vs Salidas por Ventas</p>
-                            </div>
-                            <span class="badge-tag tag-cyan">Tiempo Real</span>
-                        </div>
-                        <div class="chart-container">
-                            <canvas id="chart-tendencia-temporal"></canvas>
-                        </div>
-                    </div>
-
-                    <!-- Gráfico 3: Distribución Porcentual del Inventario -->
-                    <div class="chart-card glass-panel">
-                        <div class="chart-header">
-                            <div>
-                                <h3 class="chart-title">Composición del Inventario</h3>
-                                <p class="chart-subtitle">Distribución porcentual de los pares almacenados</p>
-                            </div>
-                            <span class="badge-tag tag-amber">3 Categorías</span>
-                        </div>
-                        <div class="chart-container donut-container">
-                            <canvas id="chart-distribucion-dona"></canvas>
-                        </div>
-                    </div>
-
-                    <!-- Gráfico 4: Data Warehouse Hechos (Comercio Exterior Bolivia) -->
-                    <!-- Gráfico 4: Análisis Comercial Directo (Fuente: Excel Registros España) -->
-                    <div class="chart-card glass-panel">
-                        <div class="chart-header">
-                            <div>
-                                <h3 class="chart-title">Contexto Comercial Global (Fuente: Excel BDatos_MANACO.xlsx)</h3>
-                                <p class="chart-subtitle">Importaciones vs Exportaciones por año registradas por España (2020-2024)</p>
-                            </div>
-                            <span class="badge-tag tag-purple">Excel Comercial (España)</span>
-                        </div>
-                        <div class="chart-container">
-                            <canvas id="chart-dw-comercio"></canvas>
-                        </div>
+                    <div class="chart-container" style="height:270px;position:relative;">
+                        <canvas id="chart-costos-comparacion"></canvas>
+                        <div class="empty-state-overlay" id="empty-costos-comp" style="display:none;">Completa los parámetros</div>
                     </div>
                 </div>
-            </section>
-
-            <!-- ============================================================== -->
-            <!-- PESTAÑA 2: ESCÁNER IA DE CALZADOS -->
-            <!-- ============================================================== -->
-            <section class="tab-pane" id="tab-scanner">
-                <div class="scanner-layout">
-                    <!-- Columna Izquierda: Visor de Video / Cámara -->
-                    <div class="scanner-main glass-panel">
-                        <div class="scanner-toolbar">
-                            <div class="toolbar-group">
-                                <button class="btn btn-tab-sm active" id="btn-mode-camera">
-                                    📷 Cámara Web
-                                </button>
-                                <button class="btn btn-tab-sm" id="btn-mode-upload">
-                                    📁 Subir Fotografía
-                                </button>
-                            </div>
-                            <div class="scanner-options">
-                                <label class="switch-control">
-                                    <input type="checkbox" id="chk-auto-register" checked>
-                                    <span class="slider"></span>
-                                    <span class="switch-label">Registro Automático (>75%)</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- Visor de Escaneo -->
-                        <div class="viewport-wrapper" id="scanner-viewport-wrapper">
-                            <!-- Video Webcam -->
-                            <video id="webcam-video" autoplay playsinline muted></video>
-                            <!-- Canvas de Captura e Inferencia -->
-                            <canvas id="webcam-canvas" style="display: none;"></canvas>
-                            <!-- Preview de Imagen Subida -->
-                            <div class="upload-dropzone" id="upload-dropzone" style="display: none;">
-                                <div class="dropzone-content">
-                                    <span class="dropzone-icon">👟</span>
-                                    <p class="dropzone-text">Arrastra una imagen de calzado aquí o haz clic para seleccionarla</p>
-                                    <input type="file" id="file-input-shoe" accept="image/*" style="display: none;">
-                                    <button class="btn btn-secondary" id="btn-trigger-upload">Seleccionar Archivo</button>
-                                </div>
-                                <img id="uploaded-preview" class="uploaded-image" alt="Previsualización de calzado" style="display: none;">
-                            </div>
-
-                            <!-- Retícula HUD de Escaneo Manaco -->
-                            <div class="hud-overlay" id="hud-overlay">
-                                <div class="hud-reticle" id="hud-reticle">
-                                    <div class="hud-corner top-left"></div>
-                                    <div class="hud-corner top-right"></div>
-                                    <div class="hud-corner bottom-left"></div>
-                                    <div class="hud-corner bottom-right"></div>
-                                    <div class="hud-scanline"></div>
-                                    
-                                    <!-- Badge Flotante de Detección -->
-                                    <div class="hud-tag" id="hud-tag" style="display: none;">
-                                        <span class="hud-tag-icon">⚡</span>
-                                        <span class="hud-tag-text" id="hud-tag-text">CALZADO DEPORTIVO</span>
-                                        <span class="hud-tag-pct" id="hud-tag-pct">94.2%</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Estado Flotante en la Esquina -->
-                            <div class="hud-status-banner" id="hud-status-banner">
-                                <span class="status-indicator-dot" id="scanner-dot"></span>
-                                <span id="scanner-status-text">ESPERANDO INICIO DE CÁMARA...</span>
-                            </div>
-                        </div>
-
-                        <!-- Controles del Escáner -->
-                        <div class="scanner-actions">
-                            <button class="btn btn-success btn-lg" id="btn-start-camera">
-                                <span>▶</span> Iniciar Cámara
-                            </button>
-                            <button class="btn btn-secondary btn-lg" id="btn-stop-camera" style="display: none;">
-                                <span>⏹</span> Detener Cámara
-                            </button>
-                            <button class="btn btn-primary btn-lg" id="btn-manual-register" disabled>
-                                <span>➕</span> Registrar Calzado al Inventario
-                            </button>
-                            <button class="btn btn-danger-soft btn-lg" id="btn-undo-scan">
-                                <span>↩</span> Deshacer Último
-                            </button>
-                        </div>
+                <div class="chart-box">
+                    <div class="chart-header">
+                        <h4 class="chart-title">Costo total según volumen de producción</h4>
+                        <span class="chart-legend-text" id="chart-subtitulo-indiff">Punto de indiferencia</span>
                     </div>
+                    <div class="chart-container" style="height:270px;position:relative;">
+                        <canvas id="chart-costos-indiferencia"></canvas>
+                        <div class="empty-state-overlay" id="empty-costos-indiff" style="display:none;">Completa los parámetros</div>
+                    </div>
+                </div>
+            </div>
 
-                    <!-- Columna Derecha: Probabilidades IA & Stock en Vivo -->
-                    <div class="scanner-sidebar">
-                        <!-- Panel de Probabilidades IA -->
-                        <div class="glass-panel sidebar-card">
-                            <h3 class="sidebar-title">Probabilidad de Clasificación</h3>
-                            <p class="sidebar-subtitle">Inferencia en tiempo real con red convolucional</p>
+            <!-- Desplegable metodológico cerrado -->
+            <details class="collapsible-panel" style="margin-top:16px;">
+                <summary class="collapsible-header">
+                    <span class="collapsible-title">Detalles metodológicos y fórmulas</span>
+                    <span class="collapsible-hint">Haz clic para ver supuestos del modelo</span>
+                </summary>
+                <div class="collapsible-content text-muted-sm">
+                    <p><strong>Costo fabricar:</strong> Volumen × Costo variable por par + Costos fijos evitables.</p>
+                    <p style="margin-top:6px;"><strong>Costo importar:</strong> Volumen × (Referencia comercial por par + Gastos de importación por par) + Gastos fijos de importación.</p>
+                    <p style="margin-top:6px;"><strong>Costo unitario:</strong> Costo total / Volumen.</p>
+                    <p style="margin-top:6px;"><strong>Diferencia:</strong> Costo total fabricar − Costo total importar. Positiva: importar cuesta menos. Negativa: fabricar cuesta menos. Tolerancia monetaria: ±$5.00 USD ("Costos equivalentes").</p>
+                    <p style="margin-top:6px;"><strong>Costos fijos permanentes:</strong> Se presentan como información estructural común. No se computan como ahorro al optar por importar.</p>
+                    <p style="margin-top:6px;"><strong>Referencia aduanera:</strong> SUM(Valor_USD) / SUM(Cantidad_pares) del comercio exterior de España 2024. Supuesto referencial de importación sin carácter contractual.</p>
+                    <p style="margin-top:6px;"><strong>Precio sugerido:</strong> Costo unitario elegido / (1 − Margen objetivo % / 100).</p>
+                </div>
+            </details>
+        </section>
 
-                            <div class="probabilities-list">
-                                <!-- Categoría 1: Deportivo -->
-                                <div class="prob-item" id="prob-item-deportivo">
-                                    <div class="prob-header">
-                                        <span class="prob-name">
-                                            <span class="dot-legend dot-cyan"></span>
-                                            Calzado Deportivo (Sneakers)
-                                        </span>
-                                        <span class="prob-value" id="val-prob-deportivo">0.0%</span>
-                                    </div>
-                                    <div class="prob-bar-bg">
-                                        <div class="prob-bar-fill fill-cyan" id="bar-prob-deportivo" style="width: 0%"></div>
-                                    </div>
-                                </div>
+        <!-- ========================================================== -->
+        <!-- P-2: CONTROL DE INVENTARIO (CON CÁMARA)                    -->
+        <!-- ========================================================== -->
+        <section class="tab-pane" id="tab-inventario">
+            <div class="pane-header">
+                <div>
+                    <div class="problem-tag">Problema 2 de 5</div>
+                    <h2 class="pane-title">Control de inventario</h2>
+                    <p class="problem-statement">
+                        Sin un registro preciso de existencias, Manaco no sabe cuándo reabastecer ni qué productos están por agotarse. Los faltantes generan pérdidas de venta; el exceso, costos de almacenaje innecesarios.
+                    </p>
+                </div>
+                <button class="btn btn-primary" id="btn-toggle-escanear-calzado">
+                    📷 Escanear calzado
+                </button>
+            </div>
 
-                                <!-- Categoría 2: Casual Cuero -->
-                                <div class="prob-item" id="prob-item-casual">
-                                    <div class="prob-header">
-                                        <span class="prob-name">
-                                            <span class="dot-legend dot-amber"></span>
-                                            Calzado Casual Cuero (Mocasines)
-                                        </span>
-                                        <span class="prob-value" id="val-prob-casual">0.0%</span>
-                                    </div>
-                                    <div class="prob-bar-bg">
-                                        <div class="prob-bar-fill fill-amber" id="bar-prob-casual" style="width: 0%"></div>
-                                    </div>
-                                </div>
-
-                                <!-- Categoría 3: Formal Vestir -->
-                                <div class="prob-item" id="prob-item-formal">
-                                    <div class="prob-header">
-                                        <span class="prob-name">
-                                            <span class="dot-legend dot-crimson"></span>
-                                            Calzado Formal Vestir (Cuero)
-                                        </span>
-                                        <span class="prob-value" id="val-prob-formal">0.0%</span>
-                                    </div>
-                                    <div class="prob-bar-bg">
-                                        <div class="prob-bar-fill fill-crimson" id="bar-prob-formal" style="width: 0%"></div>
-                                    </div>
-                                </div>
-
-                                <!-- Fondo / Sin Calzado -->
-                                <div class="prob-item" id="prob-item-sin_calzado">
-                                    <div class="prob-header">
-                                        <span class="prob-name">
-                                            <span class="dot-legend dot-gray"></span>
-                                            Sin Calzado (Fondo / Manos)
-                                        </span>
-                                        <span class="prob-value" id="val-prob-sin_calzado">0.0%</span>
-                                    </div>
-                                    <div class="prob-bar-bg">
-                                        <div class="prob-bar-fill fill-gray" id="bar-prob-sin_calzado" style="width: 0%"></div>
-                                    </div>
-                                </div>
-                            </div>
+            <!-- Panel integrado del escáner de calzado -->
+            <div class="scanner-panel" id="panel-escanear-calzado" style="display:none;">
+                <div class="scanner-panel-header">
+                    <div>
+                        <h3 class="scanner-title">Escanear calzado con cámara IA</h3>
+                        <p class="scanner-instructions">Inicia la cámara, muestra el calzado y selecciona el producto para registrar el ingreso.</p>
+                    </div>
+                    <div class="scanner-status-indicator">
+                        <span class="badge-tag" id="badge-cam-estado">Cámara apagada</span>
+                    </div>
+                </div>
+                <div class="scanner-body-grid">
+                    <div class="scanner-viewport-box">
+                        <video id="webcam-video" autoplay playsinline muted></video>
+                        <canvas id="canvas-captura" style="display:none;"></canvas>
+                        <div class="scanner-overlay-aim"><div class="aim-corners"></div></div>
+                    </div>
+                    <div class="scanner-controls-box">
+                        <div class="scanner-action-buttons">
+                            <button class="btn btn-primary btn-full" id="btn-toggle-camara">Iniciar Cámara</button>
                         </div>
-
-                        <!-- Stock en Tiempo Real -->
-                        <div class="glass-panel sidebar-card">
-                            <h3 class="sidebar-title">Stock Actual en Base de Datos</h3>
-                            <div class="mini-inventory-list" id="mini-inventory-container">
-                                <!-- Llenado dinámicamente -->
+                        <div class="detection-info-card" id="cam-info-detectada" style="display:none;">
+                            <div class="detection-header">
+                                <span class="detection-label">CATEGORÍA DETECTADA:</span>
+                                <span class="detection-name" id="cam-categoria-nombre">--</span>
                             </div>
+                            <div class="detection-sub"><span id="cam-categoria-sa6">SA6: --</span></div>
                         </div>
-
-                        <!-- Notificación de Registro Reciente -->
-                        <div class="glass-panel sidebar-card log-card">
-                            <h4 class="log-title">Último Calzado Procesado</h4>
-                            <div class="last-detection-box" id="last-detection-box">
-                                <span class="last-det-icon">👟</span>
-                                <div class="last-det-info">
-                                    <strong id="last-det-name">Ninguno en esta sesión</strong>
-                                    <span id="last-det-time">A la espera de escaneo</span>
-                                </div>
-                            </div>
+                        <div class="compatible-products-section" id="cam-productos-compatibles" style="display:none;">
+                            <span class="section-micro-title">Selecciona el producto compatible (+1 par):</span>
+                            <div class="compatible-buttons-grid" id="cam-botones-modelos"></div>
+                        </div>
+                        <div class="confirmation-banner" id="cam-confirmacion-banner" style="display:none;">
+                            <span id="cam-confirmacion-texto">✓ Ingreso registrado exitosamente.</span>
                         </div>
                     </div>
                 </div>
-            </section>
+            </div>
 
-            <!-- ============================================================== -->
-            <!-- PESTAÑA: FABRICAR O IMPORTAR (MAKE-OR-BUY & ESCENARIOS)        -->
-            <!-- ============================================================== -->
-            <section class="tab-pane" id="tab-make-or-buy">
-                <!-- Toolbar Superior de Configuración -->
-                <div class="glass-panel make-or-buy-toolbar">
-                    <div class="toolbar-brand">
-                        <span class="toolbar-icon">⚖️</span>
+            <!-- 4 KPIs -->
+            <div class="kpi-grid" style="margin-top:16px;">
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">STOCK TOTAL EN BODEGA</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-inv-total-pares">90</span><span class="kpi-unit">pares</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-inv-cap-ocupacion">Capacidad ocupada</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">INGRESOS POR CÁMARA IA</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-inv-entradas">0</span><span class="kpi-unit">pares</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-inv-ia-count">0 escaneos registrados</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">SALIDAS POR VENTAS</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-inv-salidas">0</span><span class="kpi-unit">pares</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Despachos registrados sin stock negativo</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">MODELOS BAJO MÍNIMO</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-inv-alertas-count">0</span><span class="kpi-unit">modelos</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-inv-alertas-desc">Control de stock de seguridad</span></div>
+                </div>
+            </div>
+
+            <!-- 2 Gráficos -->
+            <div class="charts-grid-2" style="margin-top:16px;">
+                <div class="chart-box">
+                    <div class="chart-header"><h4 class="chart-title">Stock actual vs mínimo por producto</h4></div>
+                    <div class="chart-container" style="height:250px;"><canvas id="chart-inv-productos"></canvas></div>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-header"><h4 class="chart-title">Existencias totales por categoría</h4></div>
+                    <div class="chart-container" style="height:250px;"><canvas id="chart-inv-categorias"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Solución -->
+            <div class="solution-block">
+                <div class="solution-block-title">Solución propuesta</div>
+                <p>Implementar un sistema de registro de movimientos (entradas y salidas) con alertas automáticas cuando el stock cae por debajo del mínimo de seguridad. La cámara IA agiliza el ingreso de existencias sin necesidad de captura manual.</p>
+                <div class="data-source-note">
+                    <span class="source-tag">Movimientos registrados</span> Operaciones reales en base de datos PostgreSQL.
+                    <span class="source-tag">Simulación</span> Historial de 12 meses sintético para pruebas de pronóstico.
+                </div>
+            </div>
+
+            <!-- Tabla de existencias -->
+            <div class="card-box" style="margin-top:16px;">
+                <div class="card-box-header"><h3 class="card-box-title">Estado de existencias por modelo (Catálogo MANACO)</h3></div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>Categoría</th>
+                                <th>Línea</th>
+                                <th>Nombre</th>
+                                <th>Stock actual</th>
+                                <th>Stock mínimo</th>
+                                <th>Precio USD</th>
+                                <th>Precio Bs.</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-inventario-catalogo">
+                            <tr><td colspan="9" class="text-center">Cargando existencias...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================================== -->
+        <!-- P-3: DIFERENCIACIÓN DE PRODUCTOS                           -->
+        <!-- ========================================================== -->
+        <section class="tab-pane" id="tab-productos">
+            <div class="pane-header">
+                <div>
+                    <div class="problem-tag">Problema 3 de 5</div>
+                    <h2 class="pane-title">Diferenciación de productos</h2>
+                    <p class="problem-statement">
+                        Manaco compite en un mercado donde el precio y la propuesta de valor de cada modelo determinan las ventas. Sin analizar qué productos contribuyen más, la empresa puede invertir recursos en modelos de bajo desempeño o abandonar los más rentables.
+                    </p>
+                </div>
+                <div class="header-controls-flex">
+                    <div class="control-select-inline">
+                        <label for="sel-producto-evaluar" class="text-muted-sm">Producto evaluado:</label>
+                        <select id="sel-producto-evaluar" class="input-select-sm">
+                            <option value="1">DEP-BAS — Deportivo Básico</option>
+                            <option value="2">DEP-CNF — Deportivo Confort</option>
+                            <option value="3">CAS-BAS — Casual Básico</option>
+                            <option value="4">CAS-CNF — Casual Confort</option>
+                            <option value="5">VES-BAS — Vestir Básico</option>
+                            <option value="6">VES-CNF — Vestir Confort</option>
+                        </select>
+                    </div>
+                    <div class="btn-group-toggle">
+                        <button class="btn btn-tab-sm active" id="btn-origen-sintetico" data-origen="sintetico">Simulación 12M</button>
+                        <button class="btn btn-tab-sm" id="btn-origen-registrado" data-origen="registrado">Registros en Almacén</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Estado de carga/error -->
+            <div id="productos-estado-box" style="display:none;" class="status-callout-box">
+                <span id="productos-estado-msg">Cargando productos...</span>
+                <button class="btn btn-secondary btn-sm" id="btn-reintentar-productos">Reintentar</button>
+            </div>
+
+            <!-- 4 KPIs -->
+            <div class="kpi-grid" style="margin-top:16px;">
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">PRODUCTOS ACTIVOS</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-prod-total-skus">6</span><span class="kpi-unit">modelos</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">2 modelos por categoría SA6</span></div>
+                </div>
+                <div class="kpi-card card-highlight">
+                    <div class="kpi-header"><span class="kpi-label">DIFERENCIA ESTIMADA / PAR</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-prod-diferencia-par">$ --</span><span class="kpi-unit">/ par</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-prod-diferencia-sub">Precio propuesto - Costo de referencia</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">MARGEN DEL ESCENARIO</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-prod-margen-escenario">--%</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-prod-margen-sub">Margen sobre precio de venta (Diferencia / Precio)</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">UNIDADES VENDIDAS</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-prod-ventas-tot">--</span><span class="kpi-unit">pares</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-prod-ventas-fuente">Procedencia: Simulación 12M</span></div>
+                </div>
+            </div>
+
+            <!-- 2 Gráficos -->
+            <div class="charts-grid-2" style="margin-top:16px;">
+                <div class="chart-box">
+                    <div class="chart-header">
                         <div>
-                            <h2 class="section-title">Decisión Estratégica: Fabricar o Importar</h2>
-                            <p class="section-subtitle">Evaluación de costos fabriles vs adquisición exterior basada en el Excel oficial BDatos_MANACO.xlsx</p>
+                            <h4 class="chart-title">Costo estimado frente a precio propuesto</h4>
+                            <span class="chart-legend-text">Barras agrupadas para los seis productos del catálogo</span>
                         </div>
                     </div>
-                    <div class="currency-control-group">
-                        <span class="control-label">Moneda de Cálculo:</span>
+                    <div class="chart-container" style="height:270px;position:relative;"><canvas id="chart-prod-costo-precio"></canvas></div>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-header">
+                        <div>
+                            <h4 class="chart-title">Ranking por producto</h4>
+                            <span class="chart-legend-text" id="ranking-subtitulo">Ordenado por pares vendidos</span>
+                        </div>
                         <div class="btn-group-toggle">
-                            <button class="btn btn-tab-sm active" id="btn-currency-usd" data-currency="USD">$us (USD)</button>
-                            <button class="btn btn-tab-sm" id="btn-currency-bob" data-currency="BOB">Bs. (BOB)</button>
+                            <button class="btn btn-tab-sm active" id="btn-ranking-pares">Pares vendidos</button>
+                            <button class="btn btn-tab-sm" id="btn-ranking-contribucion">Contribución</button>
                         </div>
-                        <div class="tc-input-wrapper">
-                            <span class="tc-label">T.C.:</span>
-                            <input type="number" id="input-tasa-cambio" value="6.96" step="0.01" min="1.0" class="input-sm tc-input" title="Tasa de cambio oficial">
-                        </div>
+                    </div>
+                    <div class="chart-container" style="height:270px;position:relative;"><canvas id="chart-prod-ranking"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Solución -->
+            <div class="solution-block">
+                <div class="solution-block-title">Solución propuesta</div>
+                <p>Evaluar cada producto por su diferencia unitaria estimada (precio menos costo de referencia), su volumen de ventas y su contribución monetaria. Los datos de ventas provienen de la simulación de 12 meses o del almacén según la selección. La diferenciación entre líneas Básico y Confort es comercial, no implica certificación técnica ni médica.</p>
+                <div class="data-source-note">
+                    <span class="source-tag">Simulación</span> Historial sintético de 12 meses en base de datos.
+                    <span class="source-tag">Movimientos registrados</span> Ventas reales desde almacén.
+                    <span class="source-tag">Fuente Excel</span> Costos de referencia aduana 2024.
+                </div>
+            </div>
+
+            <!-- Tabla de decisiones -->
+            <div class="card-box" style="margin-top:16px;">
+                <div class="card-box-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+                    <div>
+                        <h3 class="card-box-title">Comparativa: Básico vs Confort por categoría</h3>
+                        <p class="chart-legend-text">Volumen, precio, costo y aporte monetario por línea comercial</p>
+                    </div>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <label for="filtro-prod-categoria-comparar" class="text-muted-sm">Filtrar por categoría:</label>
+                        <select id="filtro-prod-categoria-comparar" class="input-select-sm">
+                            <option value="TODAS">Todas las categorías</option>
+                            <option value="640411">Calzado Deportivo (640411)</option>
+                            <option value="640399">Calzado Casual Cuero (640399)</option>
+                            <option value="640420">Calzado Formal Vestir (640420)</option>
+                        </select>
                     </div>
                 </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Producto</th>
+                                <th>Línea</th>
+                                <th>Pares vendidos</th>
+                                <th>Precio</th>
+                                <th>Costo utilizado</th>
+                                <th>Aporte monetario</th>
+                                <th>Stock disponible</th>
+                                <th>Criterio analítico</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-productos-decision">
+                            <tr><td colspan="8" class="text-center">Cargando comparativa de decisiones...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div style="padding:10px 14px;background:rgba(255,255,255,0.02);border-top:1px solid var(--border-glass);font-size:11px;color:var(--text-muted);">
+                    💡 <strong>Criterio de análisis:</strong> No se recomienda automáticamente el modelo de mayor margen porcentual; se pondera el volumen de ventas, el stock disponible y el período para evitar roturas o sobrecostos de bodega.
+                </div>
+            </div>
 
-                <!-- ============================================================== -->
-                <!-- COMPONENTE 1: COMPARACIÓN EXTERNA (EXCEL REGISTROS ESPAÑA)     -->
-                <!-- ============================================================== -->
-                <div class="glass-panel external-comparison-panel">
-                    <div class="panel-header-with-badge">
-                        <div>
-                            <h3 class="panel-title">1. Comparación Externa de Comercio Exterior</h3>
-                            <p class="panel-subtitle">Exploración analítica del Excel oficial BDatos_MANACO.xlsx con unidades separadas</p>
+            <!-- Contexto externo -->
+            <details class="collapsible-panel" id="panel-contexto-externo" style="margin-top:16px;">
+                <summary class="collapsible-header">
+                    <span class="collapsible-title">🌐 Contexto externo: participación comercial por categoría (BDatos_MANACO.xlsx)</span>
+                    <span class="collapsible-hint">Consultar distribución del comercio exterior reportado por España</span>
+                </summary>
+                <div class="collapsible-content">
+                    <div class="filters-grid" style="grid-template-columns:120px 140px auto;margin-bottom:14px;">
+                        <div class="filter-group">
+                            <label for="filtro-ext-anio">Año:</label>
+                            <select id="filtro-ext-anio" class="input-select-sm">
+                                <option value="TODOS">Todos</option>
+                                <option value="2020">2020</option>
+                                <option value="2021">2021</option>
+                                <option value="2022">2022</option>
+                                <option value="2023">2023</option>
+                                <option value="2024">2024</option>
+                            </select>
                         </div>
-                        <span class="badge-tag tag-purple">Fuente: España (240 Regs)</span>
-                    </div>
-
-                    <!-- Banner de Advertencia Metodológica -->
-                    <div class="disclaimer-banner">
-                        <span class="disclaimer-icon">⚠️</span>
-                        <div class="disclaimer-text">
-                            <strong>Aviso Metodológico Mandatorio:</strong> Los datos presentados corresponden a registros de comercio exterior reportados por el <strong>Reino de España (2020–2024)</strong>. Los valores registrados reflejan transacciones aduaneras en frontera europea; <strong>NO constituyen cotizaciones contractuales para importar a Bolivia ni precios de venta en tienda nacional</strong>.
-                        </div>
-                    </div>
-
-                    <!-- Barra de Filtros Interactivos -->
-                    <div class="filters-row-glass">
-                        <div class="filter-item">
-                            <label for="sel-comercio-flujo" class="filter-label">Flujo Comercial:</label>
-                            <select id="sel-comercio-flujo" class="input-select">
-                                <option value="Importación" selected>Importación</option>
+                        <div class="filter-group">
+                            <label for="filtro-ext-flujo">Flujo comercial:</label>
+                            <select id="filtro-ext-flujo" class="input-select-sm">
+                                <option value="TODOS">Todos</option>
+                                <option value="Importación">Importación</option>
                                 <option value="Exportación">Exportación</option>
                             </select>
                         </div>
-                        <div class="filter-item">
-                            <label for="sel-comercio-anio" class="filter-label">Año:</label>
-                            <select id="sel-comercio-anio" class="input-select">
-                                <option value="2024" selected>2024 (Referencia)</option>
-                                <option value="2023">2023</option>
-                                <option value="2022">2022</option>
-                                <option value="2021">2021</option>
-                                <option value="2020">2020</option>
-                                <option value="">Todos los Años (2020-2024)</option>
-                            </select>
-                        </div>
-                        <div class="filter-item">
-                            <label for="sel-comercio-categoria" class="filter-label">Categoría Arancelaria (SA6):</label>
-                            <select id="sel-comercio-categoria" class="input-select">
-                                <option value="">Todas las Categorías</option>
-                                <option value="640399">640399 - Suela Caucho / Capellada Cuero</option>
-                                <option value="640411">640411 - Deportivo Suela Caucho/Plástico</option>
-                                <option value="640420">640420 - Suela Cuero / Capellada Cuero</option>
-                            </select>
-                        </div>
-                        <div class="filter-item">
-                            <label for="sel-comercio-socio" class="filter-label">País Socio Comercial:</label>
-                            <select id="sel-comercio-socio" class="input-select">
-                                <option value="">Todos los Socios (30 Países)</option>
-                            </select>
-                        </div>
-                        <div class="filter-actions">
-                            <button class="btn btn-secondary" id="btn-aplicar-filtros-comercio">
-                                <span>↻</span> Aplicar Filtros
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Tarjetas de Métricas del Filtro -->
-                    <div class="kpi-mini-grid">
-                        <div class="kpi-mini-card">
-                            <span class="kpi-mini-label">VALOR COMERCIAL TOTAL</span>
-                            <div class="kpi-mini-val">
-                                <span class="curr-symbol">$us.</span> <span id="kpi-ext-valor">0.00</span>
-                            </div>
-                            <span class="kpi-mini-cap" id="kpi-ext-part-valor">0.0% del flujo</span>
-                        </div>
-                        <div class="kpi-mini-card">
-                            <span class="kpi-mini-label">VOLUMEN FÍSICO TOTAL</span>
-                            <div class="kpi-mini-val">
-                                <span id="kpi-ext-pares">0</span> <span class="unit-symbol">pares</span>
-                            </div>
-                            <span class="kpi-mini-cap" id="kpi-ext-part-pares">0.0% del flujo</span>
-                        </div>
-                        <div class="kpi-mini-card card-highlight">
-                            <span class="kpi-mini-label">COCIENTE PONDERADO REFERENCIAL</span>
-                            <div class="kpi-mini-val val-cyan">
-                                <span class="curr-symbol">$us.</span> <span id="kpi-ext-ratio">0.00</span> <span class="unit-symbol">/ par</span>
-                            </div>
-                            <span class="kpi-mini-cap">Fórmula: SUM(Valor_USD) / SUM(Cantidad_pares)</span>
-                        </div>
-                    </div>
-
-                    <!-- Dos Gráficos con Unidades Separadas -->
-                    <div class="charts-grid-separated">
-                        <div class="chart-box-glass">
-                            <div class="chart-header">
-                                <h4 class="chart-title">Valor Comercial Declarado ($ USD)</h4>
-                                <span class="badge-tag tag-cyan">Eje Monetario</span>
-                            </div>
-                            <div class="chart-container" style="height: 240px;">
-                                <canvas id="chart-comercio-valor"></canvas>
-                            </div>
-                        </div>
-                        <div class="chart-box-glass">
-                            <div class="chart-header">
-                                <h4 class="chart-title">Volumen Físico Registrado (Pares)</h4>
-                                <span class="badge-tag tag-amber">Eje Físico</span>
-                            </div>
-                            <div class="chart-container" style="height: 240px;">
-                                <canvas id="chart-comercio-pares"></canvas>
+                        <div class="filter-group">
+                            <label>Medida:</label>
+                            <div class="btn-group-toggle">
+                                <button class="btn btn-tab-sm active" id="btn-ext-medida-usd">Valor USD</button>
+                                <button class="btn btn-tab-sm" id="btn-ext-medida-pares">Cantidad de pares</button>
                             </div>
                         </div>
                     </div>
-
-                    <!-- Referencias Oficiales 2024 del Excel con Botón de Transferencia -->
-                    <div class="ref-2024-summary">
-                        <div class="ref-2024-header">
-                            <span class="ref-title">📌 Referencias de Importación 2024 (Cocientes Ponderados Oficiales del Excel):</span>
-                            <button class="btn btn-outline-sm" id="btn-transfer-ref-calc">
-                                <span>📥</span> Cargar valor de categoría a la Calculadora
-                            </button>
-                        </div>
-                        <div class="ref-chips-grid">
-                            <div class="ref-chip" data-sa6="640399" data-val="26.15">
-                                <span class="chip-code">SA 640399</span>
-                                <span class="chip-name">Casual Cuero:</span>
-                                <span class="chip-val">$26.15 USD/par</span>
-                                <span class="chip-vol">(226.75M pares)</span>
-                            </div>
-                            <div class="ref-chip" data-sa6="640411" data-val="27.80">
-                                <span class="chip-code">SA 640411</span>
-                                <span class="chip-name">Deportivo:</span>
-                                <span class="chip-val">$27.80 USD/par</span>
-                                <span class="chip-vol">(59.58M pares)</span>
-                            </div>
-                            <div class="ref-chip" data-sa6="640420" data-val="45.53">
-                                <span class="chip-code">SA 640420</span>
-                                <span class="chip-name">Formal Cuero:</span>
-                                <span class="chip-val">$45.53 USD/par</span>
-                                <span class="chip-vol">(2.24M pares)</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ============================================================== -->
-                <!-- COMPONENTE 2: CALCULADORA DE ESCENARIOS (FABRICAR O IMPORTAR)   -->
-                <!-- ============================================================== -->
-                <div class="glass-panel scenario-calculator-panel">
-                    <div class="panel-header-with-badge">
-                        <div>
-                            <h3 class="panel-title">2. Calculadora de Escenarios: Fabricar o Importar</h3>
-                            <p class="panel-subtitle">Modelo diferencial de costos y fijación de precios con separación de costos fijos evitables</p>
-                        </div>
-                        <span class="badge-tag tag-emerald">Modelo Make-or-Buy</span>
-                    </div>
-
-                    <!-- Preajustes Rápidos de los Tres Escenarios Equilibrados -->
-                    <div class="presets-toolbar">
-                        <span class="preset-label">Escenarios Predefinidos Equilibrados:</span>
-                        <div class="preset-buttons">
-                            <button class="btn btn-outline-sm btn-preset-scenario" data-preset="importar_mas_conveniente" id="btn-preset-importar">
-                                <span>📦</span> Escenario 1: Importar más conveniente (Deportivo)
-                            </button>
-                            <button class="btn btn-outline-sm btn-preset-scenario" data-preset="fabricar_mas_conveniente" id="btn-preset-fabricar">
-                                <span>👞</span> Escenario 2: Fabricar más conveniente (Cuero)
-                            </button>
-                            <button class="btn btn-outline-sm btn-preset-scenario" data-preset="condiciones_equivalentes" id="btn-preset-equivalente">
-                                <span>⚖️</span> Escenario 3: Condiciones equivalentes (Punto de Equilibrio)
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Formulario de Parámetros en Grid -->
-                    <div class="calculator-inputs-grid">
-                        <!-- Bloque 1: Parámetros del Lote y Precio -->
-                        <div class="calc-section-card glass-panel-nested">
-                            <h4 class="calc-card-title">Parámetros Generales de Demanda</h4>
-                            <div class="form-group-sm">
-                                <label for="calc-categoria-sel">Categoría de Calzado (SA6):</label>
-                                <select id="calc-categoria-sel" class="input-select-sm">
-                                    <option value="640399">SA 640399 - Calzado Casual Cuero (Mocasines)</option>
-                                    <option value="640411" selected>SA 640411 - Calzado Deportivo (Sneakers/Tenis)</option>
-                                    <option value="640420">SA 640420 - Calzado Formal Vestir (Cuero)</option>
-                                </select>
-                            </div>
-                            <div class="form-group-sm">
-                                <label for="calc-cantidad-pares">Volumen Requerido (Pares Q):</label>
-                                <input type="number" id="calc-cantidad-pares" value="5000" min="1" step="100" class="input-sm">
-                            </div>
-                            <div class="form-group-sm">
-                                <label for="calc-precio-venta">Precio de Venta Minorista Estimado (<span class="unit-curr-text">$us</span>):</label>
-                                <input type="number" id="calc-precio-venta" value="28.00" min="0" step="0.5" class="input-sm">
-                            </div>
-                            <div class="form-group-sm">
-                                <label for="calc-margen-objetivo">Margen Objetivo sobre Venta (%):</label>
-                                <input type="number" id="calc-margen-objetivo" value="35.0" min="0" max="95" step="1" class="input-sm">
-                            </div>
-                        </div>
-
-                        <!-- Bloque 2: Alternativa A - Fabricación Local -->
-                        <div class="calc-section-card glass-panel-nested">
-                            <div class="card-badge-header">
-                                <h4 class="calc-card-title">Alternativa A: Fabricación Local (Planta)</h4>
-                                <span class="badge-pill" style="background: rgba(6, 182, 212, 0.2); color: #7dd3fc;">Manufactura</span>
-                            </div>
-                            <div class="form-group-sm">
-                                <label for="calc-cv-fabril">Costo Variable Unitario Fabril (<span class="unit-curr-text">$us</span>/par):</label>
-                                <span class="hint-label">Materia prima directa (cuero/suela), mano de obra directa y energía.</span>
-                                <input type="number" id="calc-cv-fabril" value="16.50" min="0" step="0.25" class="input-sm">
-                            </div>
-                            <div class="form-group-sm">
-                                <label for="calc-cf-evitables">Costos Fijos Evitables del Lote (<span class="unit-curr-text">$us</span>):</label>
-                                <span class="hint-label">Moldes específicos y supervisores de turno (desaparecen si no se fabrica).</span>
-                                <input type="number" id="calc-cf-evitables" value="15000" min="0" step="500" class="input-sm">
-                            </div>
-                            <div class="form-group-sm">
-                                <label for="calc-cf-permanentes">Costos Fijos Estructurales (<span class="unit-curr-text">$us</span>):</label>
-                                <span class="hint-label">Gastos generales de planta (continúan existiendo en ambas opciones).</span>
-                                <input type="number" id="calc-cf-permanentes" value="12000" min="0" step="500" class="input-sm">
-                            </div>
-                        </div>
-
-                        <!-- Bloque 3: Alternativa B - Importación Externa -->
-                        <div class="calc-section-card glass-panel-nested">
-                            <div class="card-badge-header">
-                                <h4 class="calc-card-title">Alternativa B: Importación Externa</h4>
-                                <span class="badge-pill" style="background: rgba(245, 158, 11, 0.2); color: #fde68a;">Compra Exterior</span>
-                            </div>
-                            <div class="form-group-sm">
-                                <div class="label-with-btn">
-                                    <label for="calc-p-compra">Cotización Base de Compra (<span class="unit-curr-text">$us</span>/par):</label>
-                                    <button class="btn btn-tiny" id="btn-use-excel-quote" title="Usar cociente de importación 2024 del Excel">Usar ref. Excel</button>
-                                </div>
-                                <input type="number" id="calc-p-compra" value="12.00" min="0" step="0.25" class="input-sm">
-                            </div>
-                            <div class="costs-subgrid">
-                                <div class="form-group-sm">
-                                    <label for="calc-flete">Flete Int. (<span class="unit-curr-text">$us</span>/par):</label>
-                                    <input type="number" id="calc-flete" value="2.00" min="0" step="0.1" class="input-sm">
-                                </div>
-                                <div class="form-group-sm">
-                                    <label for="calc-seguro">Seguro (<span class="unit-curr-text">$us</span>/par):</label>
-                                    <input type="number" id="calc-seguro" value="0.30" min="0" step="0.05" class="input-sm">
-                                </div>
-                                <div class="form-group-sm">
-                                    <label for="calc-arancel">Aranceles / GA (<span class="unit-curr-text">$us</span>/par):</label>
-                                    <input type="number" id="calc-arancel" value="2.50" min="0" step="0.1" class="input-sm">
-                                </div>
-                                <div class="form-group-sm">
-                                    <label for="calc-logistica">Entrega Local (<span class="unit-curr-text">$us</span>/par):</label>
-                                    <input type="number" id="calc-logistica" value="0.80" min="0" step="0.1" class="input-sm">
-                                </div>
-                            </div>
-                            <div class="form-group-sm">
-                                <label for="calc-otros">Otros Gastos (<span class="unit-curr-text">$us</span>/par):</label>
-                                <input type="number" id="calc-otros" value="0.40" min="0" step="0.1" class="input-sm">
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="calc-trigger-bar">
-                        <button class="btn btn-primary btn-lg" id="btn-calcular-escenario">
-                            <span>🚀</span> Ejecutar Cálculo Diferencial
-                        </button>
-                    </div>
-
-                    <!-- Panel de Resultados del Escenario -->
-                    <div class="scenario-results-area" id="scenario-results-area">
-                        <!-- Tarjeta de Decisión Estratégica -->
-                        <div class="decision-outcome-card glass-panel" id="card-decision-outcome">
-                            <div class="outcome-badge-row">
-                                <span class="decision-pill" id="pill-decision-result">EVALUANDO...</span>
-                                <span class="decision-diff-tag" id="tag-decision-diff">Diferencial: $0.00</span>
-                            </div>
-                            <p class="decision-narrative" id="narrative-decision-result">
-                                Presiona "Ejecutar Cálculo Diferencial" o selecciona un escenario predefinido para comparar los costos.
+                    <div style="display:grid;grid-template-columns:1fr 1.2fr;gap:16px;align-items:center;">
+                        <div class="chart-container" style="height:230px;"><canvas id="chart-ext-participacion"></canvas></div>
+                        <div class="info-callout-clean">
+                            <h4 style="font-size:14px;margin-bottom:6px;">Distribución en frontera europea</h4>
+                            <p style="font-size:13px;color:var(--text-primary);font-weight:600;" id="txt-mayor-participacion">
+                                Mayor participación en los registros: Calzado Casual Cuero (640399) con 68.7%
                             </p>
-                            <div class="indifference-box" id="box-indifference-q" style="display: none;">
-                                <span class="indiff-icon">⚖️</span>
-                                <span class="indiff-text">Punto de Indiferencia en Volumen (Q*): <strong id="val-indiff-q">0</strong> pares. (Por encima de este volumen, la alternativa con menor costo variable se vuelve más ventajosa).</span>
-                            </div>
-                        </div>
-
-                        <!-- Comparativa Detallada de Costos y Márgenes -->
-                        <div class="results-comparison-grid">
-                            <div class="cost-summary-card glass-panel-nested">
-                                <h4 class="summary-card-title text-cyan">Resultados: Fabricación Local</h4>
-                                <div class="metric-row">
-                                    <span>Costo Unitario Total:</span>
-                                    <strong id="res-cu-fab">$0.00 USD</strong>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Costo Total del Lote:</span>
-                                    <strong id="res-ct-fab">$0.00 USD</strong>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Margen Bruto Proyectado:</span>
-                                    <strong id="res-mb-fab">0.0%</strong>
-                                </div>
-                                <div class="metric-row highlight-subrow">
-                                    <span>Precio Propuesto (Margen Obj):</span>
-                                    <strong id="res-pp-fab" class="text-emerald">$0.00 USD</strong>
-                                </div>
-                            </div>
-
-                            <div class="cost-summary-card glass-panel-nested">
-                                <h4 class="summary-card-title text-amber">Resultados: Importación Externa</h4>
-                                <div class="metric-row">
-                                    <span>Costo Unitario Total:</span>
-                                    <strong id="res-cu-imp">$0.00 USD</strong>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Costo Total del Lote:</span>
-                                    <strong id="res-ct-imp">$0.00 USD</strong>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Margen Bruto Proyectado:</span>
-                                    <strong id="res-mb-imp">0.0%</strong>
-                                </div>
-                                <div class="metric-row highlight-subrow">
-                                    <span>Precio Propuesto (Margen Obj):</span>
-                                    <strong id="res-pp-imp" class="text-emerald">$0.00 USD</strong>
-                                </div>
-                            </div>
-
-                            <div class="cost-summary-card glass-panel-nested active-inv-card">
-                                <h4 class="summary-card-title text-purple">Precio Activo en Inventario</h4>
-                                <div class="metric-row">
-                                    <span>Categoría:</span>
-                                    <strong id="res-act-cat">Calzado Deportivo</strong>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Precio Actual en Tienda:</span>
-                                    <strong id="res-act-precio" class="val-large text-emerald">Bs. 240.00</strong>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Equivalente en Dólares:</span>
-                                    <strong id="res-act-precio-usd">$us. 34.50</strong>
-                                </div>
-                                <div class="metric-row">
-                                    <span>Stock Físico en Bodega:</span>
-                                    <strong id="res-act-stock">30 pares</strong>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Barra de Acción Explícita: Aplicar Precio al Inventario -->
-                        <div class="price-action-banner glass-panel">
-                            <div class="action-info">
-                                <span class="action-icon">💡</span>
-                                <div>
-                                    <strong>Fijación de Precios sin Afectar Existencias:</strong>
-                                    <p>Puedes aplicar el precio propuesto por el escenario al catálogo activo del inventario. El sistema registrará el cambio de precio sin alterar las existencias de calzado.</p>
-                                </div>
-                            </div>
-                            <div class="action-controls">
-                                <button class="btn btn-success" id="btn-aplicar-precio-propuesto">
-                                    <span>💾</span> Aplicar Precio Propuesto al Inventario
-                                </button>
-                            </div>
+                            <p class="text-muted-sm" style="margin-top:6px;">Cálculo directo desde el Excel oficial. Datos clasificados a 6 dígitos (SA6).</p>
                         </div>
                     </div>
                 </div>
-            </section>
+            </details>
 
-            <!-- ============================================================== -->
-            <!-- PESTAÑA 3: MOVIMIENTOS & AUDITORÍA                             -->
-            <!-- ============================================================== -->
-            <section class="tab-pane" id="tab-movimientos">
-                <div class="glass-panel table-panel">
-                    <div class="table-header-bar">
-                        <div>
-                            <h3 class="table-title">Historial de Movimientos de Inventario</h3>
-                            <p class="table-subtitle">Trazabilidad de ingresos por visión artificial, ventas y ajustes</p>
-                        </div>
-                        <div class="table-actions">
-                            <input type="text" class="input-search" id="input-search-movs" placeholder="🔍 Buscar por categoría o acción...">
-                            <button class="btn btn-secondary" id="btn-export-csv">
-                                <span>📥</span> Exportar CSV
-                            </button>
-                            <button class="btn btn-secondary" id="btn-refresh-table">
-                                <span>↻</span> Refrescar
-                            </button>
-                        </div>
-                    </div>
+            <details class="collapsible-panel" style="margin-top:14px;">
+                <summary class="collapsible-header">
+                    <span class="collapsible-title">ℹ️ Metodología y limitaciones del catálogo</span>
+                    <span class="collapsible-hint">Definiciones de margen, contribución y advertencias</span>
+                </summary>
+                <div class="collapsible-content text-muted-sm">
+                    <p><strong>1. Líneas comerciales:</strong> Los términos "Básico" y "Confort" son configuraciones demostrativas del catálogo MANACO. No certifican ergonomía médica ni homologaciones independientes.</p>
+                    <p style="margin-top:6px;"><strong>2. Costo utilizado:</strong> Cociente ponderado oficial de importaciones aduaneras 2024: 640411 ($27.80/par), 640399 ($26.15/par), 640420 ($45.53/par).</p>
+                    <p style="margin-top:6px;"><strong>3. Contribución y márgenes:</strong> Contribución = Ingresos − (Pares × Costo de referencia). Margen = (Precio − Costo) / Precio × 100%.</p>
+                </div>
+            </details>
+        </section>
 
-                    <div class="table-responsive">
-                        <table class="data-table" id="table-movimientos">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Fecha y Hora</th>
-                                    <th>Categoría de Calzado</th>
-                                    <th>Acción</th>
-                                    <th>Cant.</th>
-                                    <th>Confianza IA</th>
-                                    <th>Origen / Tienda</th>
-                                    <th>Responsable</th>
-                                </tr>
-                            </thead>
-                            <tbody id="table-movimientos-body">
-                                <tr>
-                                    <td colspan="8" class="text-center">Cargando registros...</td>
-                                </tr>
-                            </tbody>
-                        </table>
+        <!-- ========================================================== -->
+        <!-- P-4: PLANIFICACIÓN DE DEMANDA                               -->
+        <!-- ========================================================== -->
+        <section class="tab-pane" id="tab-predicciones">
+            <div class="pane-header">
+                <div>
+                    <div class="problem-tag">Problema 4 de 5</div>
+                    <h2 class="pane-title">Planificación de demanda</h2>
+                    <p class="problem-statement">
+                        Sin un pronóstico de ventas, Manaco no puede anticipar cuándo y cuánto reabastecer. Si el stock disponible no cubre la demanda estimada durante el plazo de reposición, se producen roturas de stock y se pierden ventas.
+                    </p>
+                </div>
+            </div>
+
+            <!-- 4 KPIs -->
+            <div class="kpi-grid" style="margin-top:16px;">
+                <div class="kpi-card card-highlight">
+                    <div class="kpi-header"><span class="kpi-label">VENTAS PREVISTAS (7 DÍAS)</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-plan-ventas-7d">136</span><span class="kpi-unit">pares</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Proyección para todo el catálogo</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">ERROR DEL MODELO (MAE)</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-plan-mae">1.02</span><span class="kpi-unit">pares</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Error medio evaluado fuera de muestra</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">SUGERENCIA DE REPOSICIÓN</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-plan-reposicion-total">106</span><span class="kpi-unit">pares</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Demanda en plazo + seguridad − stock</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">PLAZO DE ENTREGA</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-plan-lead-time">7</span><span class="kpi-unit">días</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Plazo estándar de aprovisionamiento</span></div>
+                </div>
+            </div>
+
+            <!-- 2 Gráficos -->
+            <div class="charts-grid-2" style="margin-top:16px;">
+                <div class="chart-box">
+                    <div class="chart-header"><h4 class="chart-title">Proyección anual de categorías (2024 vs 2025)</h4></div>
+                    <div class="chart-container" style="height:250px;"><canvas id="chart-plan-excel"></canvas></div>
+                    <div class="data-source-note" style="padding:6px 14px 10px;">
+                        <span class="source-tag">Fuente Excel</span> Tendencia calculada desde BDatos_MANACO.xlsx por categoría SA6.
                     </div>
                 </div>
-            </section>
-
-            <!-- ============================================================== -->
-            <!-- PESTAÑA 4: SIMULADOR & DATA WAREHOUSE -->
-            <!-- ============================================================== -->
-            <section class="tab-pane" id="tab-simulador">
-                <div class="simulation-grid">
-                    <!-- Tarjeta Simulador de Transacciones -->
-                    <div class="glass-panel simulation-card">
-                        <h3 class="sim-title">🎲 Generador Sintético de Transacciones</h3>
-                        <p class="sim-subtitle">Simula transacciones realistas de inventario para poblar la base de datos y nutrir los dashboards de Business Intelligence.</p>
-
-                        <div class="form-group">
-                            <label for="sim-cantidad" class="form-label">Cantidad de transacciones a generar:</label>
-                            <div class="slider-group">
-                                <input type="range" id="sim-cantidad" min="5" max="150" step="5" value="25" class="range-slider">
-                                <span class="range-value" id="sim-cantidad-val">25</span>
-                            </div>
-                        </div>
-
-                        <div class="sim-presets">
-                            <span class="preset-label">Preajustes rápidos:</span>
-                            <button class="btn btn-outline-sm btn-sim-preset" data-cant="10">+10 Movs</button>
-                            <button class="btn btn-outline-sm btn-sim-preset" data-cant="30">+30 Movs</button>
-                            <button class="btn btn-outline-sm btn-sim-preset" data-cant="60">+60 Movs</button>
-                            <button class="btn btn-outline-sm btn-sim-preset" data-cant="120">+120 Movs</button>
-                        </div>
-
-                        <div class="sim-actions">
-                            <button class="btn btn-primary btn-lg" id="btn-run-simulation">
-                                <span>🚀</span> Ejecutar Simulación
-                            </button>
-                            <button class="btn btn-danger-soft btn-lg" id="btn-reset-inventory">
-                                <span>⚠️</span> Reiniciar Inventario (30 pares c/u)
-                            </button>
-                        </div>
-
-                        <div class="sim-log-console" id="sim-console-output">
-                            <p class="console-line">[SISTEMA] Motor de base de datos listo para generar eventos sintéticos.</p>
-                        </div>
-                    </div>
-
-                    <!-- Tarjeta Arquitectura Desacoplada MANACO BI -->
-                    <div class="glass-panel simulation-card">
-                        <h3 class="sim-title">🏛️ Arquitectura Desacoplada MANACO BI</h3>
-                        <p class="sim-subtitle">Análisis comercial directo con pandas sobre Excel y base operativa transaccional para inventario.</p>
-
-                        <div class="dw-tables-list">
-                            <div class="dw-table-item">
-                                <span class="table-badge fact-badge" style="background: rgba(16, 185, 129, 0.20); color: #6ee7b7;">EXCEL</span>
-                                <div class="dw-table-info">
-                                    <strong>BDatos_MANACO.xlsx (240 Registros)</strong>
-                                    <span>Fuente comercial directa leída con pandas (España 2020-2024). Sin dependencia de DW.</span>
-                                </div>
-                            </div>
-                            <div class="dw-table-item">
-                                <span class="table-badge live-badge">LIVE</span>
-                                <div class="dw-table-info">
-                                    <strong>inventario_calzado (Catálogo Operativo)</strong>
-                                    <span>Stock activo por categoría, umbrales de seguridad y precios de venta sin acoplamiento.</span>
-                                </div>
-                            </div>
-                            <div class="dw-table-item">
-                                <span class="table-badge live-badge">LIVE</span>
-                                <div class="dw-table-info">
-                                    <strong>registro_vision (Auditoría Transaccional)</strong>
-                                    <span>Historial continuo de escaneos IA, ventas, ajustes manuales y reversas.</span>
-                                </div>
-                            </div>
-                            <div class="dw-table-item">
-                                <span class="table-badge dim-badge">BACKUP</span>
-                                <div class="dw-table-info">
-                                    <strong>backup_dw_recuperable.sql</strong>
-                                    <span>Copia de seguridad SQL recuperable de tablas analíticas resguardada en /sql.</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="dw-status-footer">
-                            <span class="status-indicator-dot green"></span>
-                            <span>Arquitectura Desacoplada y Operativa Activa</span>
-                        </div>
+                <div class="chart-box">
+                    <div class="chart-header"><h4 class="chart-title">Pronóstico de ventas a 7 días por modelo</h4></div>
+                    <div class="chart-container" style="height:250px;"><canvas id="chart-plan-7d"></canvas></div>
+                    <div class="data-source-note" style="padding:6px 14px 10px;">
+                        <span class="source-tag">Simulación</span> Modelo de series de tiempo sobre historial sintético de 12 meses.
                     </div>
                 </div>
-            </section>
-        </main>
+            </div>
+
+            <!-- Solución -->
+            <div class="solution-block">
+                <div class="solution-block-title">Solución propuesta</div>
+                <p>Calcular el punto de reorden como la demanda esperada durante el plazo de reposición más el stock de seguridad, y disparar alertas cuando el stock actual cae por debajo de ese umbral. La sugerencia de reposición se basa en el historial de ventas sintético de 12 meses; con ventas reales suficientes, los pronósticos mejorarán.</p>
+                <div class="data-source-note">
+                    <span class="source-tag">Simulación</span> Historial transaccional de 12 meses (datos sintéticos).
+                    <span class="source-tag">Fuente Excel</span> Tendencias comerciales por categoría 2020–2024.
+                </div>
+            </div>
+
+            <!-- Tabla de reposición -->
+            <div class="card-box" style="margin-top:16px;">
+                <div class="card-box-header"><h3 class="card-box-title">Disponibilidad frente a necesidad prevista en el plazo de reposición</h3></div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Producto</th>
+                                <th>Stock actual</th>
+                                <th>Plazo (días)</th>
+                                <th>Stock seguridad</th>
+                                <th>Demanda estimada</th>
+                                <th>Umbral de pedido</th>
+                                <th>Sugerencia reposición</th>
+                                <th>Estado</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-plan-reposicion">
+                            <tr><td colspan="9" class="text-center">Cargando sugerencias...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <details class="collapsible-panel" style="margin-top:14px;">
+                <summary class="collapsible-header">
+                    <span class="collapsible-title">ℹ️ Metodología de pronóstico y reposición</span>
+                    <span class="collapsible-hint">Supuestos del modelo y limitaciones con datos sintéticos</span>
+                </summary>
+                <div class="collapsible-content text-muted-sm">
+                    <p><strong>Punto de reorden:</strong> Demanda_lead_time = Ventas_diarias_promedio × Plazo_días. Umbral = Demanda_lead_time + Stock_seguridad.</p>
+                    <p style="margin-top:6px;"><strong>Sugerencia de reposición:</strong> Máx(0, Umbral − Stock_actual + margen de seguridad adicional).</p>
+                    <p style="margin-top:6px;"><strong>Limitación:</strong> El historial actual proviene de simulaciones de 12 meses. Con ventas reales suficientes, los pronósticos y sugerencias mejorarán en precisión.</p>
+                </div>
+            </details>
+        </section>
+
+        <!-- ========================================================== -->
+        <!-- P-5: VENTAS Y CANALES DIGITALES                            -->
+        <!-- ========================================================== -->
+        <section class="tab-pane" id="tab-ventas">
+            <div class="pane-header">
+                <div>
+                    <div class="problem-tag">Problema 5 de 5</div>
+                    <h2 class="pane-title">Ventas y canales digitales</h2>
+                    <p class="problem-statement">
+                        Manaco vende a través de distintos canales: tiendas propias, distribuidores y plataformas digitales. Sin conocer el desempeño de cada canal, la empresa no puede asignar recursos de forma eficiente ni evaluar qué acciones comerciales generan más ventas.
+                    </p>
+                </div>
+            </div>
+
+            <!-- 4 KPIs -->
+            <div class="kpi-grid" style="margin-top:16px;">
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">PARES VENDIDOS ACUMULADOS</span></div>
+                    <div class="kpi-body"><span class="kpi-value" id="kpi-canales-pares-tot">6,959</span><span class="kpi-unit">pares</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Historial transaccional registrado</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">INGRESOS BRUTOS REGISTRADOS</span></div>
+                    <div class="kpi-body">
+                        <span class="kpi-currency">Bs.</span>
+                        <span class="kpi-value" id="kpi-canales-ingresos-bs">2,338,090.07</span>
+                    </div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-canales-ingresos-usd">$us. 335,932.48</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">CANAL CON MÁS VENTAS</span></div>
+                    <div class="kpi-body"><span class="kpi-value-text" id="kpi-canales-lider-nombre">Tiendas Propias</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption" id="kpi-canales-lider-share">58% de las ventas</span></div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-header"><span class="kpi-label">DATOS DE CONVERSIÓN DIGITAL</span></div>
+                    <div class="kpi-body"><span class="kpi-value-text text-muted">Sin datos para este análisis</span></div>
+                    <div class="kpi-footer"><span class="kpi-caption">Requiere telemetría de sesiones web</span></div>
+                </div>
+            </div>
+
+            <!-- 2 Gráficos -->
+            <div class="charts-grid-2" style="margin-top:16px;">
+                <div class="chart-box">
+                    <div class="chart-header"><h4 class="chart-title">Participación de ventas por canal comercial</h4></div>
+                    <div class="chart-container" style="height:250px;"><canvas id="chart-canales-participacion"></canvas></div>
+                    <div class="data-source-note" style="padding:6px 14px 10px;">
+                        <span class="source-tag">Simulación</span> Distribución sintética de 12 meses de historial de pedidos.
+                    </div>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-header"><h4 class="chart-title">Ingresos brutos por canal comercial</h4></div>
+                    <div class="chart-container" style="height:250px;"><canvas id="chart-canales-facturacion"></canvas></div>
+                    <div class="data-source-note" style="padding:6px 14px 10px;">
+                        <span class="source-tag">Simulación</span> Precios efectivos de catálogo por transacción registrada.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Solución -->
+            <div class="solution-block">
+                <div class="solution-block-title">Solución propuesta</div>
+                <p>Registrar ventas por canal e integrar pedidos digitales para comparar su desempeño frente a canales tradicionales. Con datos reales de sesiones web se podrán evaluar conversión y abandono; por ahora, esos indicadores no están disponibles.</p>
+                <div class="data-source-note">
+                    <span class="source-tag">Simulación</span> Ventas transaccionales sintéticas de 12 meses en base de datos PostgreSQL.
+                </div>
+            </div>
+
+            <!-- Acciones -->
+            <div class="card-box" style="margin-top:16px;">
+                <div class="card-box-header"><h3 class="card-box-title">Historial de simulación transaccional</h3></div>
+                <div class="card-box-body">
+                    <p class="text-muted">El historial de ventas operativas permite evaluar modelos predictivos con precios efectivos por canal. Los datos actuales son sintéticos y se generan para demostración del sistema.</p>
+                    <button class="btn btn-secondary btn-sm" id="btn-regenerar-sinteticos" style="margin-top:10px;">
+                        🔄 Regenerar datos sintéticos (12 meses)
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+</div>
+
+<!-- ============================================================== -->
+<!-- MODAL: METODOLOGÍA                                             -->
+<!-- ============================================================== -->
+<div class="modal-overlay" id="modal-metodologia" style="display:none;">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 class="modal-title">Metodología de Comercio Exterior</h3>
+            <button class="modal-close-btn" id="btn-cerrar-metodologia">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p><strong>Fuente:</strong> Comercio exterior de España, periodo 2020–2024 (archivo <code>BDatos_MANACO.xlsx</code>).</p>
+            <h4 style="margin-top:12px;margin-bottom:4px;">1. Cobertura anual variable</h4>
+            <p class="text-muted">La base contiene registros aduaneros reportados por España entre 2020 y 2024. Ciertos socios no registran operaciones en todos los años. No se imputan ceros ficticios para períodos sin información.</p>
+            <h4 style="margin-top:12px;margin-bottom:4px;">2. Claves repetidas</h4>
+            <p class="text-muted">Existen combinaciones de (Año, Flujo, Código SA6, Socio) en más de una fila del Excel, correspondientes a declaraciones aduaneras múltiples. Se conservan íntegras sin agregación previa.</p>
+            <h4 style="margin-top:12px;margin-bottom:4px;">3. Cocientes ponderados</h4>
+            <p class="text-muted">Las referencias de precio unitario por par se calculan como <code>SUM(Valor_USD) / SUM(Cantidad_pares)</code>, no como promedios aritméticos simples.</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" id="btn-entendido-metodologia">Entendido</button>
+        </div>
     </div>
+</div>
 
-    <!-- Script de la aplicación -->
-    <script src="/static/app.js"></script>
+<!-- ============================================================== -->
+<!-- MODAL: CONFIGURACIÓN Y ESTADO                                  -->
+<!-- ============================================================== -->
+<div class="modal-overlay" id="modal-config-estado" style="display:none;">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 class="modal-title">Configuración y estado del sistema</h3>
+            <button class="modal-close-btn" id="btn-cerrar-config-modal">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="config-section">
+                <h4>Estado de conectividad</h4>
+                <ul class="config-list">
+                    <li><strong>Base de datos PostgreSQL:</strong> <span class="badge-tag tag-emerald">Activo</span> (Tablas: <code>inventario_calzado</code>, <code>registro_vision</code>)</li>
+                    <li><strong>Fuente de comercio exterior:</strong> <span class="badge-tag tag-emerald">Excel pandas</span> (<code>BDatos_MANACO.xlsx</code>, 240 registros)</li>
+                    <li><strong>Aislamiento de DW:</strong> Desacoplado. Sin dependencia de tablas DW.</li>
+                </ul>
+            </div>
+            <div class="config-section" style="margin-top:16px;">
+                <h4>Moneda y tipo de cambio</h4>
+                <p class="text-muted">Tipo de cambio oficial de referencia para Bolivia:</p>
+                <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+                    <span>1 $us =</span>
+                    <input type="number" id="input-tc-global" value="6.96" step="0.01" min="1.0" class="input-text" style="width:100px;">
+                    <span>Bs.</span>
+                </div>
+            </div>
+            <div class="config-section" style="margin-top:16px;">
+                <h4>Alertas sonoras</h4>
+                <label style="display:flex;gap:8px;align-items:center;cursor:pointer;">
+                    <input type="checkbox" id="check-sonido" checked>
+                    <span>Emitir sonido de confirmación en escaneo de calzados</span>
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-primary" id="btn-guardar-config-modal">Cerrar</button>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================== -->
+<!-- MODAL: CONFIRMACIÓN DE REPOSICIÓN                              -->
+<!-- ============================================================== -->
+<div class="modal-overlay" id="modal-reposicion-overlay" style="display:none;">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3 class="modal-title">Confirmar ingreso de reposición</h3>
+            <button class="modal-close-btn" id="btn-cancelar-reposicion">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p id="modal-reposicion-mensaje">¿Desea ingresar el pedido de reposición?</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" id="btn-cancelar-modal-rep">Cancelar</button>
+            <button class="btn btn-success" id="btn-confirmar-reposicion-action">Confirmar ingreso</button>
+        </div>
+    </div>
+</div>
+
+<script src="/static/app.js"></script>
 </body>
 </html>

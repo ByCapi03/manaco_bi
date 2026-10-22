@@ -1,9 +1,14 @@
 """scripts/test_analisis.py"""
 import sys
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "clasificador_calzados"))
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
+sys.path.insert(0, str(BASE_DIR / "clasificador_calzados"))
 
-import analisis_comercial as ac
+try:
+    from clasificador_calzados import analisis_comercial as ac
+except ImportError:
+    import analisis_comercial as ac  # type: ignore
 
 def main():
     print("--- 1. Filtros Disponibles ---")
